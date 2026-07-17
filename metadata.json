@@ -1,0 +1,6 @@
+{
+  "name": "Gemini Showcase",
+  "description": "An application showcasing Gemini TTS, Live Chat, Search Grounding, and Maps Grounding features.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
