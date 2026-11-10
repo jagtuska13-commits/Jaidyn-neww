@@ -1,0 +1,47 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Create .env from secret
+        run: |
+          echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" > .env
+          echo "CHAT_MODEL=${{ vars.CHAT_MODEL || 'mistral-small-latest' }}" >> .env
+          echo "TTS_VOICE=${{ vars.TTS_VOICE || 'amelia' }}" >> .env
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jaggedgem-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Attach APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jaggedgem-v${{ github.run_number }}
+          name: JaggedGem build ${{ github.run_number }}
+          body: Automated APK build. Download app-debug.apk and install it on your phone (allow installs from unknown sources).
+          files: app/build/outputs/apk/debug/app-debug.apk
