@@ -1,12 +1,12 @@
 package com.example
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.speech.RecognizerIntent
 import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,10 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,9 +47,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.example.api.VoiceRecorder
 import com.example.ui.features.ChatMode
 import com.example.ui.features.ShowcaseViewModel
 import com.example.ui.theme.MyApplicationTheme
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ShowcaseViewModel by viewModels()
@@ -141,7 +141,7 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
     val bgColor = if (isUser) Color(0xFF111827) else Color(0xFF0F172A)
     val neonColor = if (isUser) Color(0xFF00FFCC) else Color(0xFF80DEFF)
-    
+
     Box(
         modifier = Modifier
             .widthIn(max = 280.dp)
@@ -174,7 +174,6 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
             )
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        // Add a secondary internal "glow" effect for more 3D depth
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -189,13 +188,17 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val systemInstruction by viewModel.systemInstruction.collectAsState()
-    
+    val currentMode by viewModel.currentMode.collectAsState()
+    val isTranscribing by viewModel.isTranscribing.collectAsState()
+
     var inputText by remember { mutableStateOf("") }
     var showSettingsPanel by remember { mutableStateOf(false) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var selectedImageBase64 by remember { mutableStateOf<String?>(null) }
     var selectedImageMimeType by remember { mutableStateOf<String?>(null) }
-    
+    var isRecording by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
+
     val listState = rememberLazyListState()
     val context = LocalContext.current
 
@@ -211,17 +214,34 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     )
 
-    val speechRecognizerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-        onResult = { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val data = result.data
-                val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                val recognizedText = results?.get(0) ?: ""
-                inputText += if (inputText.isNotEmpty()) " $recognizedText" else recognizedText
+    fun startRecording() {
+        val audioFile = File(context.cacheDir, "voice_input_${System.currentTimeMillis()}.wav")
+        val recorder = VoiceRecorder(audioFile)
+        if (recorder.start()) {
+            voiceRecorder = recorder
+            isRecording = true
+        }
+    }
+
+    fun stopRecording() {
+        voiceRecorder?.stop { audioFile ->
+            viewModel.transcribeAudio(audioFile) { text ->
+                if (text.isNotBlank()) {
+                    inputText += if (inputText.isNotEmpty()) " $text" else text
+                }
             }
         }
-    )
+        voiceRecorder = null
+        isRecording = false
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startRecording()
+        }
+    }
 
     LaunchedEffect(chatHistory.size, isLoading) {
         if (chatHistory.isNotEmpty()) {
@@ -233,7 +253,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         AnimatedBlobsBackground()
 
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            // Main Chat Area - 3D Glass Look
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -245,7 +264,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     .background(Color(0x0DFFFFFF), RoundedCornerShape(32.dp))
                     .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(32.dp))
             ) {
-                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(20.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -263,7 +281,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     }
                 }
 
-                // Chat Feed
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
@@ -291,7 +308,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     }
                 }
 
-                // Settings Panel
                 if (showSettingsPanel) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp).background(Color(0x1A000000), RoundedCornerShape(16.dp)).padding(16.dp)) {
                         Text("SETTINGS & MEMORY", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -303,10 +319,26 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
                             decorationBox = { inner -> if (systemInstruction.isEmpty()) Text("Inject personality...", color = Color.Gray) else inner() }
                         )
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (currentMode == ChatMode.LIVE) "Mode: Live Chat" else "Mode: Text to Speech",
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.setMode(if (currentMode == ChatMode.LIVE) ChatMode.TTS else ChatMode.LIVE)
+                                },
+                                colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))
+                            ) {
+                                Text(if (currentMode == ChatMode.LIVE) "Switch to Speech" else "Switch to Chat", fontSize = 12.sp, color = Color.White)
+                            }
+                        }
                     }
                 }
 
-                // Integrated Input Area
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -323,7 +355,31 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         decorationBox = { innerTextField ->
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
                                 IconButton(onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.size(32.dp)) { Text("+", color = Color.White) }
-                                IconButton(onClick = { speechRecognizerLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply { putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM) }) }, modifier = Modifier.size(32.dp)) { Text("🎙️") }
+                                IconButton(
+                                    onClick = {
+                                        if (isRecording) {
+                                            stopRecording()
+                                        } else {
+                                            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                            if (granted) {
+                                                startRecording()
+                                            } else {
+                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text(
+                                        when {
+                                            isRecording -> "⏹️"
+                                            isTranscribing -> "⏳"
+                                            else -> "🎙️"
+                                        },
+                                        fontSize = if (isRecording) 18.sp else 16.sp,
+                                        color = if (isRecording) Color(0xFFFF4D6D) else Color.White
+                                    )
+                                }
                                 Spacer(Modifier.width(8.dp))
                                 Box(modifier = Modifier.weight(1f)) {
                                     if (inputText.isEmpty()) Text("Message JAGGEDGEM...", color = Color.Gray, fontSize = 15.sp)
@@ -351,5 +407,3 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 }
-
-

@@ -4,19 +4,8 @@ import android.media.MediaPlayer
 import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.BuildConfig
-import com.example.api.Content
-import com.example.api.GenerateContentRequest
-import com.example.api.GenerationConfig
-import com.example.api.GoogleMapsTool
-import com.example.api.GoogleSearchTool
-import com.example.api.InlineData
-import com.example.api.Part
-import com.example.api.PrebuiltVoiceConfig
-import com.example.api.RetrofitClient
-import com.example.api.SpeechConfig
-import com.example.api.Tool
-import com.example.api.VoiceConfig
+import com.example.api.ChatMessagePayload
+import com.example.api.MistralApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,8 +16,6 @@ import java.util.UUID
 
 enum class ChatMode(val title: String) {
     LIVE("Live Chat"),
-    SEARCH("Web Search"),
-    MAPS("Maps Grounding"),
     TTS("Text to Speech")
 }
 
@@ -54,6 +41,9 @@ class ShowcaseViewModel : ViewModel() {
     private val _systemInstruction = MutableStateFlow("")
     val systemInstruction: StateFlow<String> = _systemInstruction.asStateFlow()
 
+    private val _isTranscribing = MutableStateFlow(false)
+    val isTranscribing: StateFlow<Boolean> = _isTranscribing.asStateFlow()
+
     private var mediaPlayer: MediaPlayer? = null
 
     fun setMode(mode: ChatMode) {
@@ -66,7 +56,7 @@ class ShowcaseViewModel : ViewModel() {
 
     fun sendMessage(text: String, cacheDir: File, imageBase64: String? = null, imageMimeType: String? = null) {
         if (text.isBlank() && imageBase64 == null) return
-        
+
         val userMsg = ChatMessage(text = text, isUser = true, imageBase64 = imageBase64, imageMimeType = imageMimeType)
         _chatHistory.value = _chatHistory.value + userMsg
         _isLoading.value = true
@@ -74,8 +64,6 @@ class ShowcaseViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 when (_currentMode.value) {
-                    ChatMode.SEARCH -> performSearch()
-                    ChatMode.MAPS -> performMaps()
                     ChatMode.TTS -> performTts(cacheDir)
                     ChatMode.LIVE -> performLiveChat()
                 }
@@ -90,108 +78,60 @@ class ShowcaseViewModel : ViewModel() {
         }
     }
 
-    private fun buildHistoryContents(): List<Content> {
+    private fun buildHistoryPayloads(): List<ChatMessagePayload> {
         return _chatHistory.value.map { msg ->
-            val parts = mutableListOf<Part>()
-            if (msg.text.isNotBlank()) {
-                parts.add(Part(text = msg.text))
-            }
-            if (msg.imageBase64 != null && msg.imageMimeType != null) {
-                parts.add(Part(inlineData = InlineData(mimeType = msg.imageMimeType, data = msg.imageBase64)))
-            }
-            Content(role = if (msg.isUser) "user" else "model", parts = parts)
+            ChatMessagePayload(
+                role = if (msg.isUser) "user" else "assistant",
+                text = msg.text,
+                imageBase64 = msg.imageBase64,
+                imageMimeType = msg.imageMimeType
+            )
         }
     }
 
-    private fun getSystemInstructionContent(): Content? {
-        val instruction = _systemInstruction.value
-        return if (instruction.isNotBlank()) {
-            Content(role = "system", parts = listOf(Part(text = instruction)))
-        } else {
-            null
-        }
-    }
-    
     private suspend fun performLiveChat() {
-        val request = GenerateContentRequest(
-            contents = buildHistoryContents(),
-            systemInstruction = getSystemInstructionContent()
+        val reply = MistralApi.chat(
+            history = buildHistoryPayloads(),
+            systemInstruction = _systemInstruction.value
         )
-        val response = RetrofitClient.service.generateContent(
-            model = "gemini-3.1-flash-live-preview",
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            request = request
-        )
-        val reply = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "No response"
-        _chatHistory.value = _chatHistory.value + ChatMessage(text = reply, isUser = false)
-    }
-
-    private suspend fun performSearch() {
-        val request = GenerateContentRequest(
-            contents = buildHistoryContents(),
-            systemInstruction = getSystemInstructionContent(),
-            tools = listOf(Tool(googleSearch = GoogleSearchTool()))
-        )
-        val response = RetrofitClient.service.generateContent(
-            model = "gemini-3.5-flash",
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            request = request
-        )
-        val reply = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "No response"
-        _chatHistory.value = _chatHistory.value + ChatMessage(text = reply, isUser = false)
-    }
-
-    private suspend fun performMaps() {
-        val request = GenerateContentRequest(
-            contents = buildHistoryContents(),
-            systemInstruction = getSystemInstructionContent(),
-            tools = listOf(Tool(googleMaps = GoogleMapsTool()))
-        )
-        val response = RetrofitClient.service.generateContent(
-            model = "gemini-3.5-flash",
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            request = request
-        )
-        val reply = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: "No response"
         _chatHistory.value = _chatHistory.value + ChatMessage(text = reply, isUser = false)
     }
 
     private suspend fun performTts(cacheDir: File) {
-        val request = GenerateContentRequest(
-            contents = buildHistoryContents(),
-            systemInstruction = getSystemInstructionContent(),
-            generationConfig = GenerationConfig(
-                responseModalities = listOf("AUDIO"),
-                speechConfig = SpeechConfig(
-                    voiceConfig = VoiceConfig(
-                        prebuiltVoiceConfig = PrebuiltVoiceConfig(voiceName = "Aoede")
-                    )
-                )
-            )
+        val lastUserText = _chatHistory.value.lastOrNull { it.isUser }?.text
+        if (lastUserText.isNullOrBlank()) {
+            _chatHistory.value = _chatHistory.value + ChatMessage(text = "Type something for me to speak", isUser = false)
+            return
+        }
+        val audioBytes = MistralApi.textToSpeech(lastUserText)
+        val audioBase64 = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
+        _chatHistory.value = _chatHistory.value + ChatMessage(
+            text = "Audio response generated",
+            isUser = false,
+            audioBase64 = audioBase64
         )
-        val response = RetrofitClient.service.generateContent(
-            model = "gemini-3.1-flash-tts-preview",
-            apiKey = BuildConfig.GEMINI_API_KEY,
-            request = request
-        )
-        val audioBase64 = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.inlineData?.data
-        
-        if (audioBase64 != null) {
-            _chatHistory.value = _chatHistory.value + ChatMessage(
-                text = "Audio response generated",
-                isUser = false,
-                audioBase64 = audioBase64
-            )
-            playAudioFromBase64(audioBase64, cacheDir)
-        } else {
-             _chatHistory.value = _chatHistory.value + ChatMessage(text = "No audio data received", isUser = false)
+        playAudioFromBase64(audioBase64, cacheDir)
+    }
+
+    fun transcribeAudio(audioFile: File, onResult: (String) -> Unit) {
+        _isTranscribing.value = true
+        viewModelScope.launch {
+            try {
+                val text = MistralApi.transcribe(audioFile)
+                if (text.isNotBlank()) onResult(text)
+            } catch (e: Exception) {
+                onResult("")
+            } finally {
+                _isTranscribing.value = false
+                audioFile.delete()
+            }
         }
     }
 
     fun playAudioFromBase64(base64Str: String, cacheDir: File) {
         try {
             val audioData = Base64.decode(base64Str, Base64.DEFAULT)
-            val tempFile = File(cacheDir, "temp_audio.mp3")
+            val tempFile = File(cacheDir, "temp_audio.wav")
             FileOutputStream(tempFile).use { it.write(audioData) }
 
             mediaPlayer?.release()
@@ -214,4 +154,3 @@ class ShowcaseViewModel : ViewModel() {
         mediaPlayer?.release()
     }
 }
-

@@ -1,21 +1,34 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# JaggedGem
 
-# Run and deploy your AI Studio app
+An independent, Google-free Android AI assistant with a glassmorphic neon UI.
 
-This contains everything you need to run your app locally.
+- **Chat** powered by Mistral AI (`mistral-small-latest`)
+- **Voice input** via on-device microphone recording + Voxtral transcription (no Google speech services)
+- **Natural text-to-speech** via Mistral's Voxtral TTS (voice: `amelia` — configurable)
+- **Image understanding** — attach photos and ask about them
 
-View your app in AI Studio: https://ai.studio/apps/e685f152-deab-4e0f-b892-66f0a8caf44c
+No Google accounts, no Google APIs, no Gemini. One free Mistral API key is all you need.
 
-## Run Locally
+## Setup
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+1. Install [Android Studio](https://developer.android.com/studio)
+2. Open this project directory in Android Studio and let Gradle sync finish
+3. Get a free API key at [console.mistral.ai](https://console.mistral.ai/) (no credit card required)
+4. Create a file named `.env` in the project root:
+   ```
+   MISTRAL_API_KEY=your-key-here
+   ```
+   (see `.env.example` for the full list of options, including chat model and TTS voice)
+5. Run the app on an emulator or a phone (Build > Build APK(s) for a shareable APK)
 
+## Usage
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+- Type a message and hit send to chat
+- Tap 🎙️ to start recording, ⏹️ to stop — your speech is transcribed into the input box
+- Open ⚙️ Settings to give JaggedGem a personality and switch between **Live Chat** and **Text to Speech** modes
+- Tap + to attach an image to your message
+
+## Notes
+
+- The API key is embedded in the APK at build time. Keep your built APK private.
+- Chat, voice input, and TTS require an internet connection (they call the Mistral API); no data goes to Google.
