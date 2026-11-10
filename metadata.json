@@ -1,6 +1,6 @@
 {
-  "name": "Gemini Showcase",
-  "description": "An application showcasing Gemini TTS, Live Chat, Search Grounding, and Maps Grounding features.",
+  "name": "JaggedGem",
+  "description": "An independent, Google-free Android AI chat assistant with voice input and natural text-to-speech, powered by the Mistral API.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }
