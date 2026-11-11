@@ -147,6 +147,35 @@ object MistralApi {
         }
     }
 
+    suspend fun ocrDocument(base64: String, mimeType: String): String = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("model", "mistral-ocr-latest")
+            .put(
+                "document",
+                JSONObject()
+                    .put("type", "document_url")
+                    .put("document_url", "data:$mimeType;base64,$base64")
+            )
+
+        val request = Request.Builder()
+            .url("$BASE_URL/v1/ocr")
+            .header("Authorization", authHeader())
+            .header("Content-Type", "application/json")
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw Exception("Mistral OCR error ${response.code}: ${responseBody.take(300)}")
+            }
+            val pages = JSONObject(responseBody).getJSONArray("pages")
+            (0 until pages.length()).joinToString("\n\n") { i ->
+                pages.getJSONObject(i).optString("markdown")
+            }
+        }
+    }
+
     suspend fun webSearch(query: String, maxResults: Int = 4): String = withContext(Dispatchers.IO) {
         try {
             val url = "https://html.duckduckgo.com/html/?q=" + java.net.URLEncoder.encode(query, "UTF-8")

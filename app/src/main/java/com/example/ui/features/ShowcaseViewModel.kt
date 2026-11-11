@@ -40,7 +40,9 @@ data class ChatMessage(
     val isUser: Boolean,
     val audioBase64: String? = null,
     val imageBase64: String? = null,
-    val imageMimeType: String? = null
+    val imageMimeType: String? = null,
+    val documentName: String? = null,
+    val documentText: String? = null
 )
 
 class ShowcaseViewModel(application: Application) : AndroidViewModel(application) {
@@ -84,6 +86,24 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
 
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
+
+    private val _isReadingDoc = MutableStateFlow(false)
+    val isReadingDoc: StateFlow<Boolean> = _isReadingDoc.asStateFlow()
+
+    fun processDocument(base64: String, mimeType: String, name: String, onDone: (String?) -> Unit) {
+        if (_isReadingDoc.value) return
+        _isReadingDoc.value = true
+        viewModelScope.launch {
+            try {
+                val extracted = MistralApi.ocrDocument(base64, mimeType)
+                if (extracted.isBlank()) onDone(null) else onDone(extracted.take(15000))
+            } catch (e: Exception) {
+                onDone(null)
+            } finally {
+                _isReadingDoc.value = false
+            }
+        }
+    }
 
     private val _useLiveSearch = MutableStateFlow(prefs.getBoolean(PK_LIVE_SEARCH, true))
     val useLiveSearch: StateFlow<Boolean> = _useLiveSearch.asStateFlow()
@@ -153,10 +173,24 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().remove(PK_CLONED_VOICE).putBoolean(PK_USE_CLONED, false).apply()
     }
 
-    fun sendMessage(text: String, cacheDir: File, imageBase64: String? = null, imageMimeType: String? = null) {
-        if (text.isBlank() && imageBase64 == null) return
+    fun sendMessage(
+        text: String,
+        cacheDir: File,
+        imageBase64: String? = null,
+        imageMimeType: String? = null,
+        documentName: String? = null,
+        documentText: String? = null
+    ) {
+        if (text.isBlank() && imageBase64 == null && documentText == null) return
 
-        val userMsg = ChatMessage(text = text, isUser = true, imageBase64 = imageBase64, imageMimeType = imageMimeType)
+        val userMsg = ChatMessage(
+            text = text,
+            isUser = true,
+            imageBase64 = imageBase64,
+            imageMimeType = imageMimeType,
+            documentName = documentName,
+            documentText = documentText
+        )
         _chatHistory.value = _chatHistory.value + userMsg
         _isLoading.value = true
 
@@ -267,9 +301,15 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
 
     private fun buildHistoryPayloads(): List<ChatMessagePayload> {
         return _chatHistory.value.map { msg ->
+            val text = if (msg.documentText != null) {
+                (if (msg.text.isBlank()) "" else msg.text + "\n\n") +
+                    "[Attached document: ${msg.documentName}]\n${msg.documentText.take(15000)}"
+            } else {
+                msg.text
+            }
             ChatMessagePayload(
                 role = if (msg.isUser) "user" else "assistant",
-                text = msg.text,
+                text = text,
                 imageBase64 = msg.imageBase64,
                 imageMimeType = msg.imageMimeType
             )

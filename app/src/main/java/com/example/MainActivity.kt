@@ -158,59 +158,64 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 @Composable
 fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
     val corner = RoundedCornerShape(
-        topStart = if (isUser) 24.dp else 6.dp,
-        topEnd = if (isUser) 6.dp else 24.dp,
+        topStart = if (isUser) 24.dp else 8.dp,
+        topEnd = if (isUser) 8.dp else 24.dp,
         bottomStart = 24.dp,
         bottomEnd = 24.dp
     )
+    val tint = if (isUser) Color(0xFF00E5C7) else Color(0xFF80DEFF)
+    val fill = if (isUser) Color(0xFF00303F) else Color(0xFF0F172A)
 
-    if (isUser) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 300.dp)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFF00E5C7), Color(0xFF0077B6))
-                    ),
-                    corner
-                )
-                .padding(horizontal = 18.dp, vertical = 14.dp)
-        ) {
-            content()
-        }
-    } else {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 300.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.16f),
-                            Color.White.copy(alpha = 0.05f)
-                        )
-                    ),
-                    corner
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.35f),
-                            Color(0xFF80DEFF).copy(alpha = 0.3f),
-                            Color.White.copy(alpha = 0.1f)
-                        )
-                    ),
-                    shape = corner
-                )
-                .padding(horizontal = 18.dp, vertical = 14.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color(0xFF0F172A).copy(alpha = 0.3f), corner)
+    Box(
+        modifier = Modifier
+            .widthIn(max = 300.dp)
+            .graphicsLayer {
+                shadowElevation = 14f
+                ambientShadowColor = tint.copy(alpha = 0.2f)
+                spotShadowColor = tint.copy(alpha = 0.3f)
+                shape = corner
+                clip = false
+            }
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.22f),
+                        Color.White.copy(alpha = 0.06f)
+                    )
+                ),
+                corner
             )
-            content()
-        }
+            .background(fill.copy(alpha = 0.35f), corner)
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.5f),
+                        tint.copy(alpha = 0.4f),
+                        Color.White.copy(alpha = 0.08f)
+                    )
+                ),
+                shape = corner
+            )
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .height(1.dp)
+                .padding(horizontal = 14.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.7f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+        content()
     }
 }
 
@@ -229,7 +234,7 @@ fun BubbleEntrance(isUser: Boolean, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier.graphicsLayer {
             val p = progress.value
-            alpha = p.coerceIn(0f, 1f)
+            alpha = (p * 2f).coerceIn(0f, 1f)
             scaleX = 0.6f + 0.4f * p
             scaleY = 0.6f + 0.4f * p
             translationX = (if (isUser) 140f else -140f) * (1f - p)
@@ -282,6 +287,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isTranscribing by viewModel.isTranscribing.collectAsState()
+    val isReadingDocState by viewModel.isReadingDoc.collectAsState()
     val personaName by viewModel.personaName.collectAsState()
     val personaText by viewModel.personaText.collectAsState()
     val userName by viewModel.userName.collectAsState()
@@ -302,6 +308,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var isCloningRecording by remember { mutableStateOf(false) }
     var cloneRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
     var micAmplitude by remember { mutableStateOf(0f) }
+    var selectedDocName by remember { mutableStateOf<String?>(null) }
+    var selectedDocText by remember { mutableStateOf<String?>(null) }
+    var docError by remember { mutableStateOf(false) }
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
@@ -378,6 +387,33 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     ) { granted ->
         if (granted) {
             startCloneRecording()
+        }
+    }
+
+    val docPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            docError = false
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "document.pdf"
+            try {
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null && bytes.size <= 8 * 1024 * 1024) {
+                    val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    viewModel.processDocument(b64, "application/pdf", name) { text ->
+                        if (text != null) {
+                            selectedDocName = name
+                            selectedDocText = text
+                        } else {
+                            docError = true
+                        }
+                    }
+                } else {
+                    docError = true
+                }
+            } catch (e: Exception) {
+                docError = true
+            }
         }
     }
 
@@ -518,6 +554,19 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                     }
                                     bitmap?.let { Image(it, "Attached image", Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(12.dp)).padding(bottom = 8.dp), contentScale = ContentScale.Crop) }
                                 }
+                                if (message.documentName != null) {
+                                    Row(
+                                        modifier = Modifier
+                                            .background(Color(0x26FFFFFF), RoundedCornerShape(10.dp))
+                                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("📄", fontSize = 12.sp)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(message.documentName!!, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                    if (message.text.isNotBlank()) Spacer(Modifier.height(8.dp))
+                                }
                                 if (message.text.isNotBlank()) Text(message.text, color = Color.White, fontSize = 15.sp)
                                 if (message.audioBase64 != null) {
                                     Button(onClick = { viewModel.playAudioFromBase64(message.audioBase64, context.cacheDir) }, colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))) { Text("🔊 Play") }
@@ -531,6 +580,34 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     item(key = "typing-indicator") {
                         Row(modifier = Modifier.fillMaxWidth().animateItem(), horizontalArrangement = Arrangement.Start) {
                             TypingIndicator()
+                        }
+                    }
+                }
+            }
+
+            if (selectedDocName != null || isReadingDocState || docError) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (docError) {
+                        Text("Couldn't read that document. Try a smaller PDF.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
+                    } else {
+                        Text(
+                            if (isReadingDocState) "📄 Reading document..." else "📄 $selectedDocName",
+                            color = Color(0xFF80DEFF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (!isReadingDocState) {
+                            Text("✕", color = Color(0x80FFFFFF), fontSize = 12.sp, modifier = Modifier.clickable {
+                                selectedDocName = null
+                                selectedDocText = null
+                            })
                         }
                     }
                 }
@@ -555,7 +632,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
                     decorationBox = { innerTextField ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                            IconButton(onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.size(40.dp)) { Text("+", color = Color.White, fontSize = 22.sp) }
+                            IconButton(onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.size(38.dp)) { Text("+", color = Color.White, fontSize = 20.sp) }
+                            IconButton(onClick = { docPickerLauncher.launch("application/pdf") }, modifier = Modifier.size(38.dp)) { Text("📄", color = Color.White, fontSize = 15.sp) }
                             PulsingMicButton(
                                 isRecording = isRecording,
                                 isTranscribing = isTranscribing,
@@ -579,13 +657,22 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                 innerTextField()
                             }
                             AnimatedSendButton(
-                                enabled = (inputText.isNotBlank() || selectedImageBase64 != null) && !isLoading,
+                                enabled = (inputText.isNotBlank() || selectedImageBase64 != null || selectedDocText != null) && !isLoading,
                                 onClick = {
-                                    viewModel.sendMessage(inputText, context.cacheDir, selectedImageBase64, selectedImageMimeType)
+                                    viewModel.sendMessage(
+                                        inputText,
+                                        context.cacheDir,
+                                        selectedImageBase64,
+                                        selectedImageMimeType,
+                                        selectedDocName,
+                                        selectedDocText
+                                    )
                                     inputText = ""
                                     selectedImageUri = null
                                     selectedImageBase64 = null
                                     selectedImageMimeType = null
+                                    selectedDocName = null
+                                    selectedDocText = null
                                 }
                             )
                         }
