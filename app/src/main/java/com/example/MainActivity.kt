@@ -1312,6 +1312,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
     val composeStage by viewModel.composeStage.collectAsState()
     val currentSong by viewModel.currentSong.collectAsState()
     var description by remember { mutableStateOf("") }
+    var selectedGenre by remember { mutableStateOf("Auto") }
     var myLyrics by remember { mutableStateOf("") }
     var isWritingLyrics by remember { mutableStateOf(false) }
     var composeError by remember { mutableStateOf(false) }
@@ -1386,6 +1387,31 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 }
             )
 
+            Text("PICK A BEAT / GENRE", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+            val genres = listOf("Auto", "Trap", "Hip-Hop", "House", "EDM", "Lo-fi", "Rock", "Pop", "Ballad", "Ambient", "Reggaeton", "Afrobeats")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(genres) { genre ->
+                    val selected = genre == selectedGenre
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                if (selected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (selected) Color.Transparent else Color(0x33FFFFFF),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .clickable { selectedGenre = genre }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(genre, color = if (selected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
             Text("YOUR LYRICS (optional)", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
             BasicTextField(
@@ -1416,7 +1442,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
             OutlinedButton(
                 onClick = {
                     isWritingLyrics = true
-                    viewModel.writeLyrics(description.ifBlank { "a song about something meaningful to the user" }) { lyrics ->
+                    viewModel.writeLyrics(description.ifBlank { "a song about something meaningful to the user" }, selectedGenre) { lyrics ->
                         isWritingLyrics = false
                         if (lyrics != null) myLyrics = lyrics
                     }
@@ -1435,7 +1461,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 onClick = {
                     composeError = false
                     savedMsg = false
-                    viewModel.composeSong(description, myLyrics.ifBlank { null }) { ok ->
+                    viewModel.composeSong(description, selectedGenre, myLyrics.ifBlank { null }) { ok ->
                         if (!ok) composeError = true
                     }
                 },

@@ -102,7 +102,7 @@ object MusicSynth {
         for (section in spec.sections) {
             val bars = section.bars.coerceIn(1, 16)
             val chords = if (section.chords.isEmpty()) listOf("Am") else section.chords
-            val melody = section.melody.filter { it.isNotBlank() }
+            val melody = section.melody.filter { it.isNotBlank() }.ifEmpty { chordsToMelody(chords) }
             val isDrop = section.name.contains("drop") || section.name.contains("chorus")
             val intensity = if (isDrop) 1.15f else if (section.name.contains("intro") || section.name.contains("outro")) 0.7f else 1f
             val sectionStartBeat = globalBar * 4f
@@ -181,7 +181,7 @@ object MusicSynth {
                 while (sungBeats < sectionBeatsAvail * 0.9f && lyricLines.isNotEmpty()) {
                     val line = lyricLines[lineIdx % lyricLines.size]
                     lineIdx++
-                    val sung = singLine(vocals, (sectionStartBeat + sungBeats) * beat, (sectionBeatsAvail - sungBeats) * beat, melody, beat, line, 0.20f * intensity)
+                    val sung = singLine(vocals, (sectionStartBeat + sungBeats) * beat, (sectionBeatsAvail - sungBeats) * beat, melody, beat, line, 0.26f * intensity)
                     if (sung <= 0f) break
                     sungBeats += sung
                 }
@@ -204,9 +204,9 @@ object MusicSynth {
 
         applyReverb(wet, n, if (isAmbient) 0.5f else 0.28f)
         val vocalWet = vocals.copyOf()
-        applyReverb(vocalWet, n, 0.35f)
+        applyReverb(vocalWet, n, 0.3f)
         for (i in 0 until n) {
-            vocalWet[i] *= 0.5f
+            vocalWet[i] *= 0.4f
         }
 
         if (isHouse) {
@@ -247,6 +247,20 @@ object MusicSynth {
     }
 
     private fun idx(timeSec: Float) = (timeSec * SR).toInt()
+
+    private val noteNames = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+    private fun chordsToMelody(chords: List<String>): List<String> {
+        val tokens = mutableListOf<String>()
+        for (chord in chords) {
+            val midis = parseChord(chord)
+            for (m in midis) {
+                val name = noteNames[m % 12] + (m / 12 - 1)
+                tokens.add("$name:1")
+            }
+        }
+        return if (tokens.isEmpty()) listOf("A4:2") else tokens
+    }
 
     private val vowelFormants = mapOf(
         'a' to floatArrayOf(800f, 1150f, 2900f),

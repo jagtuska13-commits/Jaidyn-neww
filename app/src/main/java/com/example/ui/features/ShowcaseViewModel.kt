@@ -516,10 +516,11 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun writeLyrics(description: String, onDone: (String?) -> Unit) {
+    fun writeLyrics(description: String, genre: String, onDone: (String?) -> Unit) {
         viewModelScope.launch {
             try {
-                val prompt = "Write original song lyrics based on: $description\n\n" +
+                val genreLine = if (genre != "Auto") "Genre: $genre.\n" else ""
+                val prompt = "Write original song lyrics based on: $description\n\n$genreLine" +
                     "Return ONLY the lyrics text with [Verse]/[Chorus]/[Bridge] tags, no JSON, no commentary. " +
                     "Make them singable: strong rhythm, natural rhymes, lines of similar length."
                 val lyrics = MistralApi.chat(
@@ -533,7 +534,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun composeSong(description: String, userLyrics: String?, onDone: (Boolean) -> Unit) {
+    fun composeSong(description: String, genre: String, userLyrics: String?, onDone: (Boolean) -> Unit) {
         if (_isComposing.value || description.isBlank()) return
         _isComposing.value = true
         _composeStage.value = "Writing lyrics and composition..."
@@ -542,7 +543,8 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 val lyricsDirective = if (!userLyrics.isNullOrBlank()) {
                     "The song MUST sing exactly these lyrics (use them verbatim in the lyrics field):\n$userLyrics\n\n"
                 } else ""
-                val prompt = "Write an original song based on: $description\n\n$lyricsDirective" +
+                val genreDirective = if (genre != "Auto") "The genre MUST be: $genre.\n" else ""
+                val prompt = "Write an original song based on: $description\n\n$genreDirective$lyricsDirective" +
                     "Respond ONLY with valid JSON, no markdown: " +
                     "{\"title\": string, \"lyrics\": string (full lyrics with [Verse]/[Chorus] tags), " +
                     "\"bpm\": int 60-160, \"style\": short style description, " +
@@ -579,11 +581,25 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 if (sections.isEmpty()) throw Exception("No sections")
+                var effectiveLyrics = if (!userLyrics.isNullOrBlank()) userLyrics else json.optString("lyrics", "")
+                if (effectiveLyrics.isBlank()) {
+                    _composeStage.value = "Writing lyrics..."
+                    effectiveLyrics = MistralApi.chat(
+                        history = listOf(
+                            ChatMessagePayload(
+                                role = "user",
+                                text = "Write original song lyrics based on: $description. Return ONLY the lyrics with [Verse]/[Chorus] tags."
+                            )
+                        ),
+                        systemInstruction = "You are a professional songwriter. Return only lyrics."
+                    ).trim()
+                }
+                val effectiveGenre = if (genre != "Auto") genre.lowercase() else json.optString("genre", "")
                 val spec = SongSpec(
                     bpm = json.optInt("bpm", 90),
                     style = json.optString("style", ""),
-                    genre = json.optString("genre", ""),
-                    lyrics = if (!userLyrics.isNullOrBlank()) userLyrics else json.optString("lyrics", ""),
+                    genre = effectiveGenre,
+                    lyrics = effectiveLyrics,
                     sections = sections
                 )
                 _composeStage.value = "Rendering audio..."
@@ -594,7 +610,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 FileOutputStream(file).use { it.write(wavBytes) }
                 _currentSong.value = SongResult(
                     title = json.optString("title", "Untitled"),
-                    lyrics = json.optString("lyrics", ""),
+                    lyrics = effectiveLyrics,
                     filePath = file.absolutePath,
                     style = "${spec.genre.ifBlank { spec.style }} · ${spec.bpm} BPM"
                 )
