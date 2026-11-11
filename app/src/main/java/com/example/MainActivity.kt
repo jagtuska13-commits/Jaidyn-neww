@@ -18,6 +18,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -68,6 +71,7 @@ import com.example.ui.features.DisputeCase
 import com.example.ui.features.DisputeStatus
 import com.example.ui.features.ShowcaseViewModel
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -153,45 +157,84 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 
 @Composable
 fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
-    val bgColor = if (isUser) Color(0xFF111827) else Color(0xFF0F172A)
-    val neonColor = if (isUser) Color(0xFF00FFCC) else Color(0xFF80DEFF)
     val corner = RoundedCornerShape(
-        topStart = if (isUser) 28.dp else 6.dp,
-        topEnd = if (isUser) 6.dp else 28.dp,
-        bottomStart = 28.dp,
-        bottomEnd = 28.dp
+        topStart = if (isUser) 24.dp else 6.dp,
+        topEnd = if (isUser) 6.dp else 24.dp,
+        bottomStart = 24.dp,
+        bottomEnd = 24.dp
     )
 
-    Box(
-        modifier = Modifier
-            .widthIn(max = 300.dp)
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.2f),
-                        Color.White.copy(alpha = 0.05f)
-                    )
-                ),
-                corner
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.35f),
-                        neonColor.copy(alpha = 0.3f),
-                        Color.White.copy(alpha = 0.1f)
-                    )
-                ),
-                shape = corner
-            )
-            .padding(horizontal = 20.dp, vertical = 16.dp)
-    ) {
+    if (isUser) {
         Box(
             modifier = Modifier
-                .matchParentSize()
-                .background(bgColor.copy(alpha = 0.3f), corner)
+                .widthIn(max = 300.dp)
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF00E5C7), Color(0xFF0077B6))
+                    ),
+                    corner
+                )
+                .padding(horizontal = 18.dp, vertical = 14.dp)
+        ) {
+            content()
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.16f),
+                            Color.White.copy(alpha = 0.05f)
+                        )
+                    ),
+                    corner
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.35f),
+                            Color(0xFF80DEFF).copy(alpha = 0.3f),
+                            Color.White.copy(alpha = 0.1f)
+                        )
+                    ),
+                    shape = corner
+                )
+                .padding(horizontal = 18.dp, vertical = 14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color(0xFF0F172A).copy(alpha = 0.3f), corner)
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+fun BubbleEntrance(isUser: Boolean, content: @Composable () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
         )
+    }
+    Box(
+        modifier = Modifier.graphicsLayer {
+            val p = progress.value
+            alpha = p.coerceIn(0f, 1f)
+            scaleX = 0.6f + 0.4f * p
+            scaleY = 0.6f + 0.4f * p
+            translationX = (if (isUser) 140f else -140f) * (1f - p)
+        }
+    ) {
         content()
     }
 }
@@ -262,6 +305,20 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
+    var splashGone by remember { mutableStateOf(false) }
+    val hasAssistantReply = chatHistory.any { !it.isUser }
+
+    LaunchedEffect(hasAssistantReply) {
+        if (hasAssistantReply) {
+            kotlinx.coroutines.delay(400)
+            splashGone = true
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(6000)
+        splashGone = true
+    }
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -379,6 +436,13 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedBlobsBackground()
 
+        AnimatedVisibility(
+            visible = !splashGone,
+            exit = scaleOut(tween(450, easing = FastOutSlowInEasing)) + fadeOut(tween(350))
+        ) {
+            JGSplash()
+        }
+
         Crossfade(targetState = showDisputes, label = "screen") { disputes ->
         if (disputes) {
             DisputesScreen(
@@ -444,6 +508,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             .animateItem(),
                         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
                     ) {
+                        BubbleEntrance(message.isUser) {
                         Bubble3D(message.isUser) {
                             Column {
                                 if (message.imageBase64 != null) {
@@ -458,6 +523,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                     Button(onClick = { viewModel.playAudioFromBase64(message.audioBase64, context.cacheDir) }, colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))) { Text("🔊 Play") }
                                 }
                             }
+                        }
                         }
                     }
                 }
@@ -1066,5 +1132,80 @@ fun StatusChip(status: DisputeStatus) {
             .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun JGSplash() {
+    val logoScale = remember { Animatable(0.4f) }
+    val glowAlpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        launch {
+            logoScale.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)
+            )
+        }
+        launch {
+            glowAlpha.animateTo(1f, tween(700))
+        }
+    }
+    val glowPulse by rememberInfiniteTransition(label = "glow").animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow-pulse"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE607030E)),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = logoScale.value
+                    scaleY = logoScale.value
+                    alpha = glowAlpha.value
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(220.dp)
+                    .graphicsLayer { alpha = glowPulse }
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(Color(0xFF00FFCC).copy(alpha = 0.35f), Color.Transparent)
+                        ),
+                        CircleShape
+                    )
+            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "JG",
+                    fontSize = 96.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 4.sp,
+                    style = TextStyle(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                        )
+                    )
+                )
+                Text(
+                    "JAGGEDGEM",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 8.sp,
+                    color = Color(0x99FFFFFF)
+                )
+            }
+        }
     }
 }
