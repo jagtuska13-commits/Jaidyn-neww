@@ -186,7 +186,6 @@ object MusicSynth {
                     sungBeats += sung
                 }
                 var startBeat = 0f
-                var startBeat = 0f
                 var noteIdx = 0
                 val sectionBeats = bars * 4f
                 while (startBeat < sectionBeats) {
