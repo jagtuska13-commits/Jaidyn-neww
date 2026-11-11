@@ -544,9 +544,14 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 if (useProVocals && AiMusicApi.isConfigured()) {
-                    composeWithProApi(description, genre, userLyrics)
-                    onDone(true)
-                    return@launch
+                    try {
+                        composeWithProApi(description, genre, userLyrics)
+                        onDone(true)
+                        return@launch
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        _composeStage.value = "Pro engine unavailable — using built-in synth..."
+                    }
                 }
                 val lyricsDirective = if (!userLyrics.isNullOrBlank()) {
                     "The song MUST sing exactly these lyrics (use them verbatim in the lyrics field):\n$userLyrics\n\n"
@@ -647,7 +652,9 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 systemInstruction = "You are a professional songwriter. Return only lyrics."
             ).trim()
         }
-        val prompt = "${genre.ifBlank { "modern" }} track based on: $description. Clean singing vocals, studio mastered."
+        val prompt = "[Genre: ${genre.ifBlank { "modern" }}]\n" +
+            "[Vocal: clean singing vocals, studio mastered]\n" +
+            "[Mood: $description]\n\n$lyrics"
         val audioBytes = AiMusicApi.generateTrack(prompt, lyrics) { stage -> _composeStage.value = stage }
         val file = File(getApplication<Application>().filesDir, "song_${System.currentTimeMillis()}.mp3")
         FileOutputStream(file).use { it.write(audioBytes) }

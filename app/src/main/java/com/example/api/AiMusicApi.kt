@@ -23,6 +23,10 @@ object AiMusicApi {
 
     fun isConfigured(): Boolean = TOKEN.isNotBlank() && MODEL_VERSION.isNotBlank()
 
+    private fun authHeader(): String {
+        return if (TOKEN.startsWith("r8_")) "Token $TOKEN" else "Bearer $TOKEN"
+    }
+
     suspend fun generateTrack(
         prompt: String,
         lyrics: String,
@@ -37,32 +41,41 @@ object AiMusicApi {
                 JSONObject()
                     .put("prompt", prompt)
                     .put("lyrics", lyrics)
+                    .put("duration", 30)
                     .put("make_instrumental", false)
             )
 
         val submit = Request.Builder()
             .url(API_URL)
-            .header("Authorization", "Bearer $TOKEN")
+            .header("Authorization", authHeader())
             .header("Content-Type", "application/json")
+            .header("Prefer", "wait")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
+        var prediction: JSONObject? = null
         val id = client.newCall(submit).execute().use { response ->
             val responseBody = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 throw Exception("Music API submit failed ${response.code}: ${responseBody.take(300)}")
             }
-            JSONObject(responseBody).optString("id").ifBlank { throw Exception("No job id returned") }
+            val json = JSONObject(responseBody)
+            prediction = json
+            json.optString("id").ifBlank { throw Exception("No job id returned") }
         }
 
         onStage("Rendering vocals and instruments...")
 
         var audioUrl: String? = null
-        for (attempt in 0 until 60) {
-            delay(5000)
+        if (prediction?.optString("status") == "succeeded") {
+            audioUrl = extractAudioUrl(prediction!!)
+        }
+        if (audioUrl == null) {
+            for (attempt in 0 until 80) {
+                delay(3000)
             val poll = Request.Builder()
                 .url("$API_URL/$id")
-                .header("Authorization", "Bearer $TOKEN")
+                .header("Authorization", authHeader())
                 .get()
                 .build()
             client.newCall(poll).execute().use { response ->
@@ -72,14 +85,7 @@ object AiMusicApi {
                 }
                 val json = JSONObject(responseBody)
                 when (json.optString("status")) {
-                    "succeeded" -> {
-                        val output = json.opt("output")
-                        audioUrl = when (output) {
-                            is String -> output
-                            is org.json.JSONArray -> output.optString(0)
-                            else -> throw Exception("No audio in output")
-                        }
-                    }
+                    "succeeded" -> audioUrl = extractAudioUrl(json)
                     "failed", "canceled" -> throw Exception("Music generation failed: ${responseBody.take(200)}")
                     else -> onStage("Rendering... ${json.optString("status")}")
                 }
@@ -94,6 +100,15 @@ object AiMusicApi {
         client.newCall(download).execute().use { response ->
             if (!response.isSuccessful) throw Exception("Download failed ${response.code}")
             response.body?.bytes() ?: throw Exception("Empty audio download")
+        }
+    }
+
+    private fun extractAudioUrl(json: JSONObject): String? {
+        val output = json.opt("output") ?: return null
+        return when (output) {
+            is String -> output
+            is org.json.JSONArray -> output.optString(0)
+            else -> null
         }
     }
 }
