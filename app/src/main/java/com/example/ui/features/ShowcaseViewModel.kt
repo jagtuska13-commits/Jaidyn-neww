@@ -525,12 +525,13 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 val prompt = "Write an original song based on: $description\n\n" +
                     "Respond ONLY with valid JSON, no markdown: " +
                     "{\"title\": string, \"lyrics\": string (full lyrics with [Verse]/[Chorus] tags), " +
-                    "\"bpm\": int 60-140, \"style\": short style description, " +
-                    "\"sections\": [{\"name\": string, \"bars\": int 2-8, " +
-                    "\"chords\": array of chord symbols like Am F C G, " +
+                    "\"bpm\": int 60-160, \"style\": short style description, " +
+                    "\"genre\": one of: trap, hiphop, drill, house, edm, techno, dance, lofi, chill, jazz, rock, metal, punk, pop, ballad, ambient, reggaeton, afrobeats, " +
+                    "\"sections\": [{\"name\": string (intro/verse/chorus/drop/bridge/outro), \"bars\": int 2-8, " +
+                    "\"chords\": array of chord symbols like Am F C G7 (4 per section), " +
                     "\"melody\": array of melody tokens like A4:2 C5:1 E5:1 (note:beats, 8-16 tokens per section)}]}. " +
-                    "Use 4-6 sections (intro, verse, chorus, bridge, outro). " +
-                    "Melody notes must fit the section's chords."
+                    "Use 5-8 sections with a real song structure. " +
+                    "Melody notes must fit the section's chords. Tempo and genre must match the user's request."
                 val reply = MistralApi.chat(
                     history = listOf(ChatMessagePayload(role = "user", text = prompt)),
                     systemInstruction = "You are a professional songwriter and composer. Return only valid JSON."
@@ -560,6 +561,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 val spec = SongSpec(
                     bpm = json.optInt("bpm", 90),
                     style = json.optString("style", ""),
+                    genre = json.optString("genre", ""),
                     sections = sections
                 )
                 _composeStage.value = "Rendering audio..."
@@ -572,7 +574,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     title = json.optString("title", "Untitled"),
                     lyrics = json.optString("lyrics", ""),
                     filePath = file.absolutePath,
-                    style = spec.style
+                    style = "${spec.genre.ifBlank { spec.style }} · ${spec.bpm} BPM"
                 )
                 onDone(true)
             } catch (e: Exception) {
