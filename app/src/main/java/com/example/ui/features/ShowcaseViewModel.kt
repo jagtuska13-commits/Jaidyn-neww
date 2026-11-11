@@ -531,6 +531,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     "\"chords\": array of chord symbols like Am F C G7 (4 per section), " +
                     "\"melody\": array of melody tokens like A4:2 C5:1 E5:1 (note:beats, 8-16 tokens per section)}]}. " +
                     "Use 5-8 sections with a real song structure. " +
+                    "Each section's melody should follow the phrasing of the lyrics sung in that section (roughly one melody note per syllable). " +
                     "Melody notes must fit the section's chords. Tempo and genre must match the user's request."
                 val reply = MistralApi.chat(
                     history = listOf(ChatMessagePayload(role = "user", text = prompt)),
@@ -562,6 +563,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     bpm = json.optInt("bpm", 90),
                     style = json.optString("style", ""),
                     genre = json.optString("genre", ""),
+                    lyrics = json.optString("lyrics", ""),
                     sections = sections
                 )
                 _composeStage.value = "Rendering audio..."

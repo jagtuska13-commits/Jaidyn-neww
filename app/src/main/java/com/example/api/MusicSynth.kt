@@ -11,6 +11,7 @@ data class SongSpec(
     val bpm: Int,
     val style: String,
     val genre: String,
+    val lyrics: String,
     val sections: List<SongSection>
 )
 
@@ -80,6 +81,14 @@ object MusicSynth {
         val drums = FloatArray(n)
         val music = FloatArray(n)
         val wet = FloatArray(n)
+        val vocals = FloatArray(n)
+
+        val lyricLines = spec.lyrics
+            .replace(Regex("\\[[^]]*\\]"), " ")
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        var lineIdx = 0
 
         val genre = spec.genre.lowercase()
         val isTrap = genre.contains("trap") || genre.contains("hip") || genre.contains("drill")
@@ -96,6 +105,7 @@ object MusicSynth {
             val melody = section.melody.filter { it.isNotBlank() }
             val isDrop = section.name.contains("drop") || section.name.contains("chorus")
             val intensity = if (isDrop) 1.15f else if (section.name.contains("intro") || section.name.contains("outro")) 0.7f else 1f
+            val sectionStartBeat = globalBar * 4f
 
             for (b in 0 until bars) {
                 val barStart = globalBar * 4f
@@ -166,6 +176,11 @@ object MusicSynth {
             }
 
             if (melody.isNotEmpty()) {
+                if (lineIdx < lyricLines.size) {
+                    val line = lyricLines[lineIdx % lyricLines.size]
+                    lineIdx++
+                    singLine(vocals, sectionStartBeat * beat, bars * 4f * beat, melody, beat, line, 0.20f * intensity)
+                }
                 var startBeat = 0f
                 var noteIdx = 0
                 val sectionBeats = bars * 4f
@@ -184,6 +199,11 @@ object MusicSynth {
         }
 
         applyReverb(wet, n, if (isAmbient) 0.5f else 0.28f)
+        val vocalWet = vocals.copyOf()
+        applyReverb(vocalWet, n, 0.35f)
+        for (i in 0 until n) {
+            vocalWet[i] *= 0.5f
+        }
 
         if (isHouse) {
             duckAgainstKick(music, drums, n, 0.6f)
@@ -191,7 +211,7 @@ object MusicSynth {
 
         val mix = FloatArray(n)
         for (i in 0 until n) {
-            mix[i] = softClip(drums[i] + music[i] + wet[i])
+            mix[i] = softClip(drums[i] + music[i] + wet[i] + vocals[i] + vocalWet[i])
         }
 
         var peak = 1e-6f
@@ -223,6 +243,110 @@ object MusicSynth {
     }
 
     private fun idx(timeSec: Float) = (timeSec * SR).toInt()
+
+    private val vowelFormants = mapOf(
+        'a' to floatArrayOf(800f, 1150f, 2900f),
+        'e' to floatArrayOf(400f, 2000f, 2550f),
+        'i' to floatArrayOf(350f, 2100f, 2800f),
+        'o' to floatArrayOf(450f, 800f, 2830f),
+        'u' to floatArrayOf(325f, 700f, 2530f)
+    )
+
+    private fun syllabify(line: String): List<Pair<Char, Boolean>> {
+        val out = mutableListOf<Pair<Char, Boolean>>()
+        val words = line.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        for (w in words) {
+            val clean = w.replace(Regex("[^a-z']"), "")
+            val sylls = Regex("[^aeiouy]*[aeiouy]+[^aeiouy]*").findAll(clean).map { it.value }.toList()
+            if (sylls.isEmpty()) continue
+            sylls.forEachIndexed { i, s ->
+                val vowel = s.first { it in "aeiouy" }.let { if (it == 'y') 'i' else it }
+                val isWordEnd = i == sylls.size - 1
+                out.add(vowel to isWordEnd)
+            }
+        }
+        return out
+    }
+
+    private fun singLine(
+        vocals: FloatArray,
+        startTime: Float,
+        sectionDur: Float,
+        melody: List<String>,
+        beat: Float,
+        line: String,
+        amp: Float
+    ) {
+        val sylls = syllabify(line)
+        if (sylls.isEmpty()) return
+        var cursor = startTime
+        var noteIdx = 0
+        var prevFreq = 0f
+        for ((syllIdx, syl) in sylls.withIndex()) {
+            if (cursor >= startTime + sectionDur) break
+            val token = melody[noteIdx % melody.size]
+            val parts = token.split(":")
+            val freq = noteToFreq(parts[0].trim()) ?: continue
+            val beats = parts.getOrNull(1)?.toFloatOrNull()?.coerceIn(0.25f, 4f) ?: 1f
+            val (vowel, isWordEnd) = syl
+            val dur = beats * beat * if (isWordEnd) 0.85f else 0.6f
+            singSyllable(vocals, cursor, dur, freq, prevFreq, vowel, amp)
+            prevFreq = freq
+            cursor += dur
+            noteIdx++
+            if (syllIdx == sylls.size - 1) break
+        }
+    }
+
+    private fun singSyllable(
+        vocals: FloatArray,
+        start: Float,
+        dur: Float,
+        freq: Float,
+        prevFreq: Float,
+        vowel: Char,
+        amp: Float
+    ) {
+        val s0 = idx(start)
+        val len = idx(dur)
+        val formants = vowelFormants[vowel] ?: vowelFormants['a']!!
+        val attack = idx(0.03f)
+        val release = idx(0.06f)
+
+        val y1 = FloatArray(3)
+        val y2 = FloatArray(3)
+        val coeffs = formants.map { f ->
+            val bw = 70f + f * 0.04f
+            val r = Math.exp((-Math.PI * bw / SR).toDouble()).toFloat()
+            val theta = (2 * Math.PI * f / SR).toFloat()
+            floatArrayOf(2f * r * Math.cos(theta.toDouble()).toFloat(), -r * r)
+        }
+
+        for (i in 0 until len) {
+            val p = i + s0
+            if (p >= vocals.size) break
+            val t = i.toFloat() / SR
+            val env = when {
+                i < attack -> i.toFloat() / attack
+                i > len - release -> (len - i).toFloat() / release
+                else -> 1f
+            } * (0.75f + 0.25f * Math.sin((2 * Math.PI * 5.0 * t).toDouble()).toFloat())
+            val glide = if (prevFreq > 0f && i < idx(0.05f)) {
+                prevFreq + (freq - prevFreq) * (i.toFloat() / idx(0.05f))
+            } else freq
+            val vibrato = Math.sin((2 * Math.PI * 5.6 * t).toDouble()).toFloat() * 0.006f
+            val f0 = glide + vibrato
+            val source = 0.6f * saw(t, f0) + 0.4f * Math.sin((2 * Math.PI * f0 * 2 * t).toDouble()).toFloat()
+            var v = 0f
+            for (fc in 0 until 3) {
+                val y = source + coeffs[fc][0] * y1[fc] + coeffs[fc][1] * y2[fc]
+                y2[fc] = y1[fc]
+                y1[fc] = y
+                v += y * (if (fc == 0) 1f else if (fc == 1) 0.55f else 0.3f)
+            }
+            vocals[p] += softClip(v * 0.25f) * env * amp
+        }
+    }
 
     private fun tone(mix: FloatArray, start: Float, dur: Float, freq: Float, amp: Float, harmonics: Int) {
         val s0 = idx(start)
