@@ -1310,7 +1310,6 @@ fun JGSplash() {
 }
 
 @Composable
-@Composable
 fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
     val isComposing by viewModel.isComposing.collectAsState()
     val composeStage by viewModel.composeStage.collectAsState()
