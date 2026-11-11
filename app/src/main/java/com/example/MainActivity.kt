@@ -17,6 +17,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -51,8 +52,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -61,6 +64,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.api.VoiceRecorder
+import com.example.ui.features.DisputeCase
+import com.example.ui.features.DisputeStatus
 import com.example.ui.features.ShowcaseViewModel
 import com.example.ui.theme.MyApplicationTheme
 import java.io.File
@@ -253,6 +258,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var isCloningRecording by remember { mutableStateOf(false) }
     var cloneRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
     var micAmplitude by remember { mutableStateOf(0f) }
+    var showDisputes by remember { mutableStateOf(false) }
+    var openDisputeId by remember { mutableStateOf<String?>(null) }
+    var disputeError by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -315,6 +323,20 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    val disputeImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                getResizedBase64(context, uri)?.let { (base64, mime) ->
+                    disputeError = false
+                    viewModel.createDispute(base64, mime) { ok ->
+                        if (ok) showDisputes = true else disputeError = true
+                    }
+                } ?: run { disputeError = true }
+            }
+        }
+    )
+
     fun toggleCloneRecording() {
         if (isCloningRecording) {
             cloneRecorder?.stop { audioFile ->
@@ -356,6 +378,19 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedBlobsBackground()
 
+        Crossfade(targetState = showDisputes, label = "screen") { disputes ->
+        if (disputes) {
+            DisputesScreen(
+                viewModel = viewModel,
+                onBack = { showDisputes = false },
+                onNewDispute = { disputeImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                openDisputeId = openDisputeId,
+                onOpenDispute = { openDisputeId = it },
+                onCloseDispute = { openDisputeId = null },
+                isError = disputeError,
+                onDismissError = { disputeError = false }
+            )
+        } else {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -380,8 +415,13 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         )
                     )
                 )
-                IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
-                    Text("⚙️", fontSize = 20.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showDisputes = true }) {
+                        Text("⚖️", fontSize = 20.sp)
+                    }
+                    IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
+                        Text("⚙️", fontSize = 20.sp)
+                    }
                 }
             }
 
@@ -485,6 +525,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     }
                 )
             }
+        }
+        }
         }
 
         if (showSettingsPanel) {
@@ -762,5 +804,247 @@ fun AnimatedSendButton(enabled: Boolean, onClick: () -> Unit) {
             )
     ) {
         Icon(Icons.Default.Send, "Send", tint = Color.Black)
+    }
+}
+
+@Composable
+fun DisputesScreen(
+    viewModel: ShowcaseViewModel,
+    onBack: () -> Unit,
+    onNewDispute: () -> Unit,
+    openDisputeId: String?,
+    onOpenDispute: (String) -> Unit,
+    onCloseDispute: () -> Unit,
+    isError: Boolean,
+    onDismissError: () -> Unit
+) {
+    val disputes by viewModel.disputes.collectAsState()
+    val isAnalyzing by viewModel.isAnalyzing.collectAsState()
+    val clipboard = LocalClipboardManager.current
+    val openDispute = disputes.firstOrNull { it.id == openDisputeId }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Text("←", fontSize = 22.sp, color = Color.White)
+                }
+                Text(
+                    "DISPUTES",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 3.sp,
+                    style = TextStyle(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFFFFB703), Color(0xFFFF007F))
+                        )
+                    )
+                )
+            }
+            Button(
+                onClick = onNewDispute,
+                enabled = !isAnalyzing,
+                colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text(if (isAnalyzing) "Analyzing..." else "+ New dispute", color = Color.White, fontSize = 13.sp)
+            }
+        }
+
+        if (isError) {
+            Text(
+                "Couldn't analyze that document. Try a clearer photo.",
+                color = Color(0xFFFF8FA3),
+                fontSize = 13.sp,
+                modifier = Modifier.padding(horizontal = 20.dp).clickable(onClick = onDismissError)
+            )
+        }
+
+        if (disputes.isEmpty() && !isAnalyzing) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("⚖️", fontSize = 48.sp)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Snap a bill, fine, or rejection letter\nand JaggedGem fights it for you.",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "It reads the document, drafts the dispute letter,\nand tracks the case until it's resolved.",
+                    color = Color(0x80FFFFFF),
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(24.dp))
+                Button(
+                    onClick = onNewDispute,
+                    colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF)),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text("Start your first dispute", color = Color.White, fontSize = 14.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (isAnalyzing) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
+                                .padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TypingIndicator()
+                        }
+                    }
+                }
+                items(disputes, key = { it.id }) { dispute ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                            .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
+                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                            .clickable { onOpenDispute(dispute.id) }
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(dispute.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            StatusChip(dispute.status)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(dispute.issuer, color = Color(0x80FFFFFF), fontSize = 13.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Row {
+                            Text("Amount: ${dispute.amount}", color = Color(0xFF00FFCC), fontSize = 12.sp)
+                            Spacer(Modifier.width(16.dp))
+                            Text("Deadline: ${dispute.deadline}", color = Color(0xFFFFB703), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (openDispute != null) {
+        ModalBottomSheet(
+            onDismissRequest = onCloseDispute,
+            containerColor = Color(0xFF0F0B1A),
+            shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(openDispute.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    StatusChip(openDispute.status)
+                }
+                Text(openDispute.summary, color = Color(0xB3FFFFFF), fontSize = 13.sp)
+                HorizontalDivider(color = Color(0x1FFFFFFF))
+                Text("DISPUTE LETTER", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(openDispute.letter, color = Color.White, fontSize = 13.sp)
+                OutlinedButton(
+                    onClick = { clipboard.setText(AnnotatedString(openDispute.letter)) },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Copy letter", color = Color(0xFF00FFCC), fontSize = 13.sp)
+                }
+                if (openDispute.followUpLetter != null) {
+                    HorizontalDivider(color = Color(0x1FFFFFFF))
+                    Text("FOLLOW-UP LETTER", color = Color(0xFFFF8FA3), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(openDispute.followUpLetter!!, color = Color.White, fontSize = 13.sp)
+                    OutlinedButton(
+                        onClick = { clipboard.setText(AnnotatedString(openDispute.followUpLetter!!)) },
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Copy follow-up", color = Color(0xFF00FFCC), fontSize = 13.sp)
+                    }
+                }
+                HorizontalDivider(color = Color(0x1FFFFFFF))
+                Text("Move case forward:", color = Color(0x80FFFFFF), fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (openDispute.status == DisputeStatus.DRAFTED) {
+                        Button(
+                            onClick = { viewModel.setDisputeStatus(openDispute.id, DisputeStatus.SENT) },
+                            colors = ButtonDefaults.buttonColors(Color(0x3300FFCC)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Mark sent", color = Color.White, fontSize = 12.sp) }
+                    }
+                    if (openDispute.status == DisputeStatus.SENT) {
+                        Button(
+                            onClick = { viewModel.setDisputeStatus(openDispute.id, DisputeStatus.AWAITING) },
+                            colors = ButtonDefaults.buttonColors(Color(0x33FFB703)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Awaiting reply", color = Color.White, fontSize = 12.sp) }
+                    }
+                    if (openDispute.followUpLetter == null) {
+                        OutlinedButton(
+                            onClick = { viewModel.draftFollowUp(openDispute.id) { } },
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Draft follow-up", color = Color(0xFFFF8FA3), fontSize = 12.sp) }
+                    }
+                    if (openDispute.status != DisputeStatus.RESOLVED) {
+                        OutlinedButton(
+                            onClick = { viewModel.setDisputeStatus(openDispute.id, DisputeStatus.RESOLVED) },
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Resolved ✓", color = Color(0xFF00FFCC), fontSize = 12.sp) }
+                    }
+                }
+                TextButton(onClick = { viewModel.deleteDispute(openDispute.id); onCloseDispute() }) {
+                    Text("Delete case", color = Color(0xFFFF4D6D), fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusChip(status: DisputeStatus) {
+    val (label, color) = when (status) {
+        DisputeStatus.DRAFTED -> "Drafted" to Color(0xFF80DEFF)
+        DisputeStatus.SENT -> "Sent" to Color(0xFFFFB703)
+        DisputeStatus.AWAITING -> "Awaiting" to Color(0xFFFF4D6D)
+        DisputeStatus.RESOLVED -> "Resolved" to Color(0xFF00FFCC)
+    }
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }

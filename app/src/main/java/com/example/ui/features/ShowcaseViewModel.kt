@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.media.MediaPlayer
+import org.json.JSONArray
+import org.json.JSONObject
 import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +18,21 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+
+enum class DisputeStatus { DRAFTED, SENT, AWAITING, RESOLVED }
+
+data class DisputeCase(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val issuer: String,
+    val amount: String,
+    val deadline: String,
+    val summary: String,
+    val letter: String,
+    val followUpLetter: String? = null,
+    val status: DisputeStatus = DisputeStatus.DRAFTED,
+    val createdAt: Long = System.currentTimeMillis()
+)
 
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
@@ -61,6 +78,12 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
 
     private val _isSavingVoice = MutableStateFlow(false)
     val isSavingVoice: StateFlow<Boolean> = _isSavingVoice.asStateFlow()
+
+    private val _disputes = MutableStateFlow(loadDisputes())
+    val disputes: StateFlow<List<DisputeCase>> = _disputes.asStateFlow()
+
+    private val _isAnalyzing = MutableStateFlow(false)
+    val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
 
@@ -219,6 +242,135 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun createDispute(imageBase64: String, imageMimeType: String, onDone: (Boolean) -> Unit) {
+        if (_isAnalyzing.value) return
+        _isAnalyzing.value = true
+        viewModelScope.launch {
+            try {
+                val prompt = "You are a dispute resolution expert. Analyze the attached document " +
+                    "(a bill, fine, rejection letter, or similar). Respond ONLY with valid JSON, no markdown, " +
+                    "with these fields: title (short case name), issuer (who sent it), amount (money involved or 'N/A'), " +
+                    "deadline (response deadline or 'Unknown'), summary (what the document is and the strongest " +
+                    "grounds to dispute it), letter (a complete, formal, ready-to-send dispute letter that demands " +
+                    "correction, refund, or cancellation, citing relevant consumer rights generally without inventing " +
+                    "specific laws or case numbers)."
+                val reply = MistralApi.chat(
+                    history = listOf(
+                        ChatMessagePayload(
+                            role = "user",
+                            text = prompt,
+                            imageBase64 = imageBase64,
+                            imageMimeType = imageMimeType
+                        )
+                    ),
+                    systemInstruction = ""
+                )
+                val jsonStart = reply.indexOf('{')
+                val jsonEnd = reply.lastIndexOf('}')
+                if (jsonStart < 0 || jsonEnd <= jsonStart) throw Exception("Could not analyze document")
+                val json = JSONObject(reply.substring(jsonStart, jsonEnd + 1))
+                val newCase = DisputeCase(
+                    title = json.optString("title", "Dispute"),
+                    issuer = json.optString("issuer", "Unknown issuer"),
+                    amount = json.optString("amount", "N/A"),
+                    deadline = json.optString("deadline", "Unknown"),
+                    summary = json.optString("summary", ""),
+                    letter = json.optString("letter", "")
+                )
+                _disputes.value = listOf(newCase) + _disputes.value
+                persistDisputes()
+                onDone(true)
+            } catch (e: Exception) {
+                onDone(false)
+            } finally {
+                _isAnalyzing.value = false
+            }
+        }
+    }
+
+    fun draftFollowUp(disputeId: String, onDone: (Boolean) -> Unit) {
+        val dispute = _disputes.value.firstOrNull { it.id == disputeId } ?: return onDone(false)
+        viewModelScope.launch {
+            try {
+                val prompt = "This dispute case is unresolved with no adequate response. " +
+                    "Original letter sent:\n\n${dispute.letter}\n\n" +
+                    "Write a firm follow-up letter that escalates: demands response within 14 days, " +
+                    "threatens referral to the relevant ombudsman/regulator and small claims court. " +
+                    "Return ONLY the letter text."
+                val reply = MistralApi.chat(
+                    history = listOf(ChatMessagePayload(role = "user", text = prompt)),
+                    systemInstruction = ""
+                )
+                updateDispute(disputeId) { it.copy(followUpLetter = reply.trim()) }
+                onDone(true)
+            } catch (e: Exception) {
+                onDone(false)
+            }
+        }
+    }
+
+    fun setDisputeStatus(disputeId: String, status: DisputeStatus) {
+        updateDispute(disputeId) { it.copy(status = status) }
+    }
+
+    fun deleteDispute(disputeId: String) {
+        _disputes.value = _disputes.value.filterNot { it.id == disputeId }
+        persistDisputes()
+    }
+
+    private fun updateDispute(disputeId: String, transform: (DisputeCase) -> DisputeCase) {
+        _disputes.value = _disputes.value.map { if (it.id == disputeId) transform(it) else it }
+        persistDisputes()
+    }
+
+    private fun persistDisputes() {
+        val arr = JSONArray()
+        _disputes.value.forEach { d ->
+            arr.put(
+                JSONObject()
+                    .put("id", d.id)
+                    .put("title", d.title)
+                    .put("issuer", d.issuer)
+                    .put("amount", d.amount)
+                    .put("deadline", d.deadline)
+                    .put("summary", d.summary)
+                    .put("letter", d.letter)
+                    .put("followUpLetter", d.followUpLetter ?: "")
+                    .put("status", d.status.name)
+                    .put("createdAt", d.createdAt)
+            )
+        }
+        prefs.edit().putString(PK_DISPUTES, arr.toString()).apply()
+    }
+
+    private fun loadDisputes(): List<DisputeCase> {
+        return try {
+            val raw = prefs.getString(PK_DISPUTES, null) ?: return emptyList()
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val json = arr.getJSONObject(i)
+                DisputeCase(
+                    id = json.getString("id"),
+                    title = json.getString("title"),
+                    issuer = json.getString("issuer"),
+                    amount = json.optString("amount", "N/A"),
+                    deadline = json.optString("deadline", "Unknown"),
+                    summary = json.optString("summary", ""),
+                    letter = json.optString("letter", ""),
+                    followUpLetter = json.optString("followUpLetter").ifBlank { null },
+                    status = try {
+                        DisputeStatus.valueOf(json.optString("status", "DRAFTED"))
+                    } catch (e: Exception) {
+                        DisputeStatus.DRAFTED
+                    },
+                    createdAt = json.optLong("createdAt", System.currentTimeMillis())
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     fun clearHistory() {
         _chatHistory.value = emptyList()
     }
@@ -236,6 +388,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_SPEAK_REPLIES = "speak_replies"
         private const val PK_USE_CLONED = "use_cloned_voice"
         private const val PK_CLONED_VOICE = "cloned_voice_base64"
+        private const val PK_DISPUTES = "disputes_json"
     }
 }
 
