@@ -52,11 +52,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.api.VoiceRecorder
-import com.example.ui.features.ChatMode
 import com.example.ui.features.ShowcaseViewModel
 import com.example.ui.theme.MyApplicationTheme
 import java.io.File
@@ -229,9 +229,15 @@ fun TypingIndicator() {
 fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val systemInstruction by viewModel.systemInstruction.collectAsState()
-    val currentMode by viewModel.currentMode.collectAsState()
     val isTranscribing by viewModel.isTranscribing.collectAsState()
+    val personaName by viewModel.personaName.collectAsState()
+    val personaText by viewModel.personaText.collectAsState()
+    val userName by viewModel.userName.collectAsState()
+    val userAbout by viewModel.userAbout.collectAsState()
+    val speakReplies by viewModel.speakReplies.collectAsState()
+    val useClonedVoice by viewModel.useClonedVoice.collectAsState()
+    val clonedVoiceBase64 by viewModel.clonedVoiceBase64.collectAsState()
+    val isSavingVoice by viewModel.isSavingVoice.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showSettingsPanel by remember { mutableStateOf(false) }
@@ -240,6 +246,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var selectedImageMimeType by remember { mutableStateOf<String?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var voiceRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
+    var isCloningRecording by remember { mutableStateOf(false) }
+    var cloneRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -265,6 +273,15 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    fun startCloneRecording() {
+        val audioFile = File(context.cacheDir, "voice_sample_${System.currentTimeMillis()}.wav")
+        val recorder = VoiceRecorder(audioFile)
+        if (recorder.start()) {
+            cloneRecorder = recorder
+            isCloningRecording = true
+        }
+    }
+
     fun stopRecording() {
         voiceRecorder?.stop { audioFile ->
             viewModel.transcribeAudio(audioFile) { text ->
@@ -282,6 +299,31 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     ) { granted ->
         if (granted) {
             startRecording()
+        }
+    }
+
+    val clonePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startCloneRecording()
+        }
+    }
+
+    fun toggleCloneRecording() {
+        if (isCloningRecording) {
+            cloneRecorder?.stop { audioFile ->
+                viewModel.saveVoiceSample(audioFile)
+            }
+            cloneRecorder = null
+            isCloningRecording = false
+        } else {
+            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                startCloneRecording()
+            } else {
+                clonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         }
     }
 
@@ -320,47 +362,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 )
                 IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
                     Text("⚙️", fontSize = 20.sp)
-                }
-            }
-
-            AnimatedVisibility(
-                visible = showSettingsPanel,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .background(Color(0x33000000), RoundedCornerShape(20.dp))
-                        .padding(16.dp)
-                ) {
-                    Text("SETTINGS & MEMORY", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    BasicTextField(
-                        value = systemInstruction,
-                        onValueChange = { viewModel.updateSystemInstruction(it) },
-                        modifier = Modifier.fillMaxWidth().height(80.dp).background(Color(0x26000000), RoundedCornerShape(12.dp)).padding(12.dp),
-                        textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                        decorationBox = { inner -> if (systemInstruction.isEmpty()) Text("Inject personality...", color = Color.Gray) else inner() }
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (currentMode == ChatMode.LIVE) "Mode: Live Chat" else "Mode: Text to Speech",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Button(
-                            onClick = {
-                                viewModel.setMode(if (currentMode == ChatMode.LIVE) ChatMode.TTS else ChatMode.LIVE)
-                            },
-                            colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))
-                        ) {
-                            Text(if (currentMode == ChatMode.LIVE) "Switch to Speech" else "Switch to Chat", fontSize = 12.sp, color = Color.White)
-                        }
-                    }
                 }
             }
 
@@ -464,9 +465,180 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 )
             }
         }
+
+        if (showSettingsPanel) {
+            ModalBottomSheet(
+                onDismissRequest = { showSettingsPanel = false },
+                containerColor = Color(0xFF0F0B1A),
+                shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        "PERSONA & PROFILE",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 2.sp,
+                        style = TextStyle(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                            )
+                        )
+                    )
+
+                    DrawerTextField(
+                        label = "AI name",
+                        value = personaName,
+                        onValueChange = { viewModel.updatePersonaName(it) },
+                        placeholder = "e.g. Gem"
+                    )
+
+                    DrawerTextField(
+                        label = "AI personality",
+                        value = personaText,
+                        onValueChange = { viewModel.updatePersonaText(it) },
+                        placeholder = "Inject personality: witty, caring, sarcastic...",
+                        minHeight = 72.dp
+                    )
+
+                    DrawerTextField(
+                        label = "Your name",
+                        value = userName,
+                        onValueChange = { viewModel.updateUserName(it) },
+                        placeholder = "e.g. Alex"
+                    )
+
+                    DrawerTextField(
+                        label = "About you",
+                        value = userAbout,
+                        onValueChange = { viewModel.updateUserAbout(it) },
+                        placeholder = "Tell the AI who you are: interests, job, style...",
+                        minHeight = 72.dp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Speak replies aloud", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text("Every response is spoken automatically", color = Color(0x80FFFFFF), fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = speakReplies,
+                            onCheckedChange = { viewModel.setSpeakReplies(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00FFCC),
+                                checkedTrackColor = Color(0x3300FFCC)
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0x1FFFFFFF))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Use MY voice", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                if (clonedVoiceBase64.isNotBlank()) "Voice sample saved — replies in your voice" else "Record a sample to unlock voice cloning",
+                                color = Color(0x80FFFFFF),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = useClonedVoice,
+                            enabled = clonedVoiceBase64.isNotBlank(),
+                            onCheckedChange = { viewModel.setUseClonedVoice(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00FFCC),
+                                checkedTrackColor = Color(0x3300FFCC)
+                            )
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { toggleCloneRecording() },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                if (isCloningRecording) Color(0xFFFF4D6D) else Color(0x33FFFFFF)
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text(
+                                when {
+                                    isCloningRecording -> "⏹ Stop recording"
+                                    isSavingVoice -> "Saving..."
+                                    else -> "🎙 Record voice sample"
+                                },
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        }
+                        if (clonedVoiceBase64.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = { viewModel.clearVoiceSample() },
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text("Delete", color = Color(0xFFFF8FA3), fontSize = 14.sp)
+                            }
+                        }
+                    }
+
+                    Text(
+                        "Speak naturally for 5–15 seconds. Your sample stays on this device and is sent only to generate your replies.",
+                        color = Color(0x60FFFFFF),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
     }
 }
 
+@Composable
+fun DrawerTextField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    minHeight: Dp = 52.dp
+) {
+    Column {
+        Text(label, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = minHeight)
+                .background(Color(0x1AFFFFFF), RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) Text(placeholder, color = Color(0x60FFFFFF), fontSize = 14.sp)
+                    inner()
+                }
+            }
+        )
+    }
+}
 @Composable
 fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, onToggle: () -> Unit) {
     val pulse by rememberInfiniteTransition(label = "mic-pulse").animateFloat(

@@ -96,12 +96,16 @@ object MistralApi {
         }
     }
 
-    suspend fun textToSpeech(text: String): ByteArray = withContext(Dispatchers.IO) {
+    suspend fun textToSpeech(text: String, refAudioBase64: String? = null): ByteArray = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("model", TTS_MODEL)
-            .put("voice_id", VOICE)
             .put("input", text)
             .put("response_format", "mp3")
+        if (refAudioBase64 != null) {
+            body.put("ref_audio", refAudioBase64)
+        } else {
+            body.put("voice_id", VOICE)
+        }
 
         val request = Request.Builder()
             .url("$BASE_URL/v1/audio/speech")
