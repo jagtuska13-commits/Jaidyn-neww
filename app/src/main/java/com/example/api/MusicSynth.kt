@@ -111,6 +111,9 @@ object MusicSynth {
                 val barStart = globalBar * 4f
                 val chordMidis = parseChord(chords[b % chords.size])
                 val rootFreq = midiToFreq(chordMidis[0] - 24)
+                if (!isAmbient) {
+                    subBass(music, barStart * beat, 4f * beat, rootFreq / 2f, if (isDrop) 0.18f else 0.13f * intensity)
+                }
 
                 if (isTrap) {
                     hitKick(drums, (barStart) * beat, 0.5f * intensity)
@@ -217,6 +220,7 @@ object MusicSynth {
         for (i in 0 until n) {
             mix[i] = softClip(drums[i] + music[i] + wet[i] + vocals[i] + vocalWet[i])
         }
+        masterEq(mix, n)
 
         var peak = 1e-6f
         for (s in mix) if (Math.abs(s) > peak) peak = Math.abs(s)
@@ -247,6 +251,42 @@ object MusicSynth {
     }
 
     private fun idx(timeSec: Float) = (timeSec * SR).toInt()
+
+    private fun subBass(mix: FloatArray, start: Float, dur: Float, freq: Float, amp: Float) {
+        if (freq < 20f) return
+        val s0 = idx(start)
+        val len = idx(dur)
+        val attack = idx(0.02f)
+        val release = idx(0.08f)
+        for (i in 0 until len) {
+            val p = i + s0
+            if (p >= mix.size) break
+            val t = i.toFloat() / SR
+            val env = when {
+                i < attack -> i.toFloat() / attack
+                i > len - release -> (len - i).toFloat() / release
+                else -> 1f
+            }
+            val v = Math.sin((2 * Math.PI * freq * t).toDouble()).toFloat() +
+                0.25f * Math.sin((4 * Math.PI * freq * t).toDouble()).toFloat()
+            mix[p] += v * env * amp
+        }
+    }
+
+    private fun masterEq(mix: FloatArray, n: Int) {
+        var lpLow = 0f
+        var lpHigh = 0f
+        val aLow = (2 * Math.PI * 140 / SR).toFloat()
+        val aHigh = (2 * Math.PI * 4200 / SR).toFloat()
+        for (i in 0 until n) {
+            val x = mix[i]
+            lpLow += aLow * (x - lpLow)
+            lpHigh += aHigh * (x - lpHigh)
+            val bass = lpLow
+            val treble = x - lpHigh
+            mix[i] = softClip(x + 0.35f * bass + 0.18f * treble)
+        }
+    }
 
     private val noteNames = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 

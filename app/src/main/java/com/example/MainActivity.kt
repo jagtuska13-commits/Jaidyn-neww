@@ -35,6 +35,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -1308,6 +1310,7 @@ fun JGSplash() {
 }
 
 @Composable
+@Composable
 fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
     val isComposing by viewModel.isComposing.collectAsState()
     val composeStage by viewModel.composeStage.collectAsState()
@@ -1318,7 +1321,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
     var isWritingLyrics by remember { mutableStateOf(false) }
     var composeError by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf(false) }
-    val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
@@ -1354,12 +1357,13 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                "Describe your song — style, mood, topic — and JaggedGem writes the lyrics, composes the music, and renders it as audio on your phone.",
+                "Describe your song — or paste your own lyrics — pick a beat, and JaggedGem writes, sings, and produces the full track.",
                 color = Color(0x80FFFFFF),
                 fontSize = 13.sp
             )
@@ -1369,7 +1373,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 onValueChange = { description = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 72.dp)
+                    .heightIn(min = 64.dp)
                     .background(Color(0x1AFFFFFF), RoundedCornerShape(18.dp))
                     .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(18.dp))
                     .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1420,7 +1424,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 onValueChange = { myLyrics = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 100.dp)
+                    .heightIn(min = 100.dp, max = 260.dp)
                     .background(Color(0x14FFFFFF), RoundedCornerShape(18.dp))
                     .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(18.dp))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1484,69 +1488,56 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
             }
 
             if (isComposing) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     TypingIndicator()
                 }
             }
 
             currentSong?.let { song ->
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
+                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                        .padding(20.dp)
                 ) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateItem()
-                                .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
-                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
-                                .padding(20.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(song.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(song.style, color = Color(0xFFFFB703), fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { viewModel.playSong(song.filePath) },
+                            colors = ButtonDefaults.buttonColors(Color(0x3300FFCC)),
+                            shape = RoundedCornerShape(14.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(song.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Text(song.style, color = Color(0xFFFFB703), fontSize = 11.sp)
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Button(
-                                    onClick = { viewModel.playSong(song.filePath) },
-                                    colors = ButtonDefaults.buttonColors(Color(0x3300FFCC)),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text("▶ Play", color = Color.White, fontSize = 13.sp)
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        savedMsg = viewModel.saveSongToDownloads(song)
-                                    },
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text("Save to Downloads", color = Color(0xFF00FFCC), fontSize = 13.sp)
-                                }
-                            }
-                            if (savedMsg) {
-                                Spacer(Modifier.height(6.dp))
-                                Text("Saved to Downloads ✓", color = Color(0xFF00FFCC), fontSize = 12.sp)
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Text("LYRICS", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                song.lyrics,
-                                color = Color(0xB3FFFFFF),
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp
-                            )
+                            Text("▶ Play", color = Color.White, fontSize = 13.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { savedMsg = viewModel.saveSongToDownloads(song) },
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("Save to Downloads", color = Color(0xFF00FFCC), fontSize = 13.sp)
                         }
                     }
+                    if (savedMsg) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("Saved to Downloads ✓", color = Color(0xFF00FFCC), fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text("LYRICS", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        song.lyrics,
+                        color = Color(0xB3FFFFFF),
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp
+                    )
                 }
             }
         }
