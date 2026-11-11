@@ -9,6 +9,7 @@ import org.json.JSONObject
 import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.api.AiMusicApi
 import com.example.api.ChatMessagePayload
 import com.example.api.MistralApi
 import com.example.api.MusicSynth
@@ -534,12 +535,19 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun composeSong(description: String, genre: String, userLyrics: String?, onDone: (Boolean) -> Unit) {
+    fun isProMusicConfigured(): Boolean = AiMusicApi.isConfigured()
+
+    fun composeSong(description: String, genre: String, userLyrics: String?, useProVocals: Boolean, onDone: (Boolean) -> Unit) {
         if (_isComposing.value || description.isBlank()) return
         _isComposing.value = true
         _composeStage.value = "Writing lyrics and composition..."
         viewModelScope.launch {
             try {
+                if (useProVocals && AiMusicApi.isConfigured()) {
+                    composeWithProApi(description, genre, userLyrics)
+                    onDone(true)
+                    return@launch
+                }
                 val lyricsDirective = if (!userLyrics.isNullOrBlank()) {
                     "The song MUST sing exactly these lyrics (use them verbatim in the lyrics field):\n$userLyrics\n\n"
                 } else ""
@@ -623,6 +631,32 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 _composeStage.value = ""
             }
         }
+    }
+
+    private suspend fun composeWithProApi(description: String, genre: String, userLyrics: String?) {
+        _composeStage.value = "Writing lyrics..."
+        var lyrics = userLyrics?.trim().orEmpty()
+        if (lyrics.isBlank()) {
+            lyrics = MistralApi.chat(
+                history = listOf(
+                    ChatMessagePayload(
+                        role = "user",
+                        text = "Write original song lyrics based on: $description. Return ONLY the lyrics with [Verse]/[Chorus] tags."
+                    )
+                ),
+                systemInstruction = "You are a professional songwriter. Return only lyrics."
+            ).trim()
+        }
+        val prompt = "${genre.ifBlank { "modern" }} track based on: $description. Clean singing vocals, studio mastered."
+        val audioBytes = AiMusicApi.generateTrack(prompt, lyrics) { stage -> _composeStage.value = stage }
+        val file = File(getApplication<Application>().filesDir, "song_${System.currentTimeMillis()}.mp3")
+        FileOutputStream(file).use { it.write(audioBytes) }
+        _currentSong.value = SongResult(
+            title = "${genre.ifBlank { "AI" }} track — ${description.take(40)}",
+            lyrics = lyrics,
+            filePath = file.absolutePath,
+            style = "Pro AI vocals · $genre"
+        )
     }
 
     fun playSong(path: String) {

@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.jaggedgem"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "3.5.0"
+        versionCode = 13
+        versionName = "3.6.0"
 
         val envFile = rootProject.file(".env")
         val envProps = Properties().apply {
@@ -24,6 +24,9 @@ android {
         buildConfigField("String", "MISTRAL_API_KEY", "\"${envProps.getProperty("MISTRAL_API_KEY", "")}\"")
         buildConfigField("String", "CHAT_MODEL", "\"${envProps.getProperty("CHAT_MODEL", "mistral-small-latest")}\"")
         buildConfigField("String", "TTS_VOICE", "\"${envProps.getProperty("TTS_VOICE", "gb_jane_neutral")}\"")
+        buildConfigField("String", "MUSIC_API_URL", "\"${envProps.getProperty("MUSIC_API_URL", "https://api.replicate.com/v1/predictions")}\"")
+        buildConfigField("String", "MUSIC_API_TOKEN", "\"${envProps.getProperty("MUSIC_API_TOKEN", "")}\"")
+        buildConfigField("String", "MUSIC_MODEL_VERSION", "\"${envProps.getProperty("MUSIC_MODEL_VERSION", "")}\"")
     }
 
     buildTypes {

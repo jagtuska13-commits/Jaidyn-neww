@@ -1318,6 +1318,8 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
     var selectedGenre by remember { mutableStateOf("Auto") }
     var myLyrics by remember { mutableStateOf("") }
     var isWritingLyrics by remember { mutableStateOf(false) }
+    var useProVocals by remember { mutableStateOf(false) }
+    val proConfigured by remember { mutableStateOf(viewModel.isProMusicConfigured()) }
     var composeError by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -1416,6 +1418,30 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 }
             }
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Pro AI vocals (real singing)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (proConfigured) "Studio-quality singing via music AI" else "Needs MUSIC_API_TOKEN secret — falls back to built-in synth",
+                        color = Color(0x80FFFFFF),
+                        fontSize = 11.sp
+                    )
+                }
+                Switch(
+                    checked = useProVocals && proConfigured,
+                    enabled = proConfigured,
+                    onCheckedChange = { useProVocals = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color(0xFF00FFCC),
+                        checkedTrackColor = Color(0x3300FFCC)
+                    )
+                )
+            }
+
             Text("YOUR LYRICS (optional)", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
 
             BasicTextField(
@@ -1465,7 +1491,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 onClick = {
                     composeError = false
                     savedMsg = false
-                    viewModel.composeSong(description, selectedGenre, myLyrics.ifBlank { null }) { ok ->
+                    viewModel.composeSong(description, selectedGenre, myLyrics.ifBlank { null }, useProVocals && proConfigured) { ok ->
                         if (!ok) composeError = true
                     }
                 },
