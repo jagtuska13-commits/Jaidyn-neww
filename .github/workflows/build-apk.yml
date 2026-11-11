@@ -50,6 +50,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: jaggedgem-v${{ github.run_number }}
-          name: JaggedGem build ${{ github.run_number }}
+          name: Stratagem build ${{ github.run_number }}
           body: Automated APK build. Download app-debug.apk and install it on your phone (allow installs from unknown sources).
           files: app/build/outputs/apk/debug/app-debug.apk

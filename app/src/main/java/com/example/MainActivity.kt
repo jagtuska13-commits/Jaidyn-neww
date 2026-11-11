@@ -295,6 +295,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val personaText by viewModel.personaText.collectAsState()
     val userName by viewModel.userName.collectAsState()
     val userAbout by viewModel.userAbout.collectAsState()
+    val jurisdiction by viewModel.jurisdiction.collectAsState()
     val speakReplies by viewModel.speakReplies.collectAsState()
     val useClonedVoice by viewModel.useClonedVoice.collectAsState()
     val useLiveSearch by viewModel.useLiveSearch.collectAsState()
@@ -480,7 +481,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             visible = !splashGone,
             exit = scaleOut(tween(450, easing = FastOutSlowInEasing)) + fadeOut(tween(350))
         ) {
-            JGSplash()
+            StratagemSplash()
         }
 
         Crossfade(targetState = showDisputes || showMusic, label = "screen") { full ->
@@ -515,7 +516,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "JAGGEDGEM",
+                    "STRATAGEM",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 3.sp,
@@ -665,7 +666,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             )
                             Spacer(Modifier.width(8.dp))
                             Box(modifier = Modifier.weight(1f)) {
-                                if (inputText.isEmpty()) Text("Message JAGGEDGEM...", color = Color(0x80FFFFFF), fontSize = 15.sp)
+                                if (inputText.isEmpty()) Text("Message STRATAGEM...", color = Color(0x80FFFFFF), fontSize = 15.sp)
                                 innerTextField()
                             }
                             AnimatedSendButton(
@@ -748,6 +749,14 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         onValueChange = { viewModel.updateUserAbout(it) },
                         placeholder = "Tell the AI who you are: interests, job, style...",
                         minHeight = 72.dp
+                    )
+
+                    DrawerTextField(
+                        label = "YOUR JURISDICTION",
+                        value = jurisdiction,
+                        onValueChange = { viewModel.updateJurisdiction(it) },
+                        placeholder = "e.g. New South Wales, Australia / California, USA",
+                        minHeight = 52.dp
                     )
 
                     Row(
@@ -1065,7 +1074,7 @@ fun DisputesScreen(
                 Text("⚖️", fontSize = 48.sp)
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Snap a bill, fine, or rejection letter\nand JaggedGem fights it for you.",
+                    "Snap a bill, fine, or rejection letter\nand Stratagem fights it for you.",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
@@ -1235,7 +1244,7 @@ fun StatusChip(status: DisputeStatus) {
 }
 
 @Composable
-fun JGSplash() {
+fun StratagemSplash() {
     val logoScale = remember { Animatable(0.4f) }
     val glowAlpha = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -1287,7 +1296,7 @@ fun JGSplash() {
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "JG",
+                    "S",
                     fontSize = 96.sp,
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 4.sp,
@@ -1298,7 +1307,7 @@ fun JGSplash() {
                     )
                 )
                 Text(
-                    "JAGGEDGEM",
+                    "STRATAGEM",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 8.sp,
@@ -1364,7 +1373,7 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                "Describe your song — or paste your own lyrics — pick a beat, and JaggedGem writes, sings, and produces the full track.",
+                "Describe your song — or paste your own lyrics — pick a beat, and Stratagem writes, sings, and produces the full track.",
                 color = Color(0x80FFFFFF),
                 fontSize = 13.sp
             )

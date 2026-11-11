@@ -119,6 +119,14 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     private val _useLiveSearch = MutableStateFlow(prefs.getBoolean(PK_LIVE_SEARCH, true))
     val useLiveSearch: StateFlow<Boolean> = _useLiveSearch.asStateFlow()
 
+    private val _jurisdiction = MutableStateFlow(prefs.getString(PK_JURISDICTION, "") ?: "")
+    val jurisdiction: StateFlow<String> = _jurisdiction.asStateFlow()
+
+    fun updateJurisdiction(value: String) {
+        _jurisdiction.value = value
+        prefs.edit().putString(PK_JURISDICTION, value).apply()
+    }
+
     private val _memoryDigest = MutableStateFlow(prefs.getString(PK_MEMORY_DIGEST, "") ?: "")
     val memoryDigest: StateFlow<String> = _memoryDigest.asStateFlow()
 
@@ -217,7 +225,10 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 val searchContext = if (_useLiveSearch.value && text.isNotBlank()) {
-                    val results = MistralApi.webSearch(text)
+                    val searchQuery = if (_jurisdiction.value.isNotBlank()) {
+                        "$text ${_jurisdiction.value.trim()} law current"
+                    } else text
+                    val results = MistralApi.webSearch(searchQuery)
                     if (results.isNotBlank()) "Live web search results for the user's latest message (use for current facts, cite sources when relevant):\n$results" else ""
                 } else ""
                 val reply = MistralApi.chat(
@@ -301,6 +312,20 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
 
     private fun buildSystemInstruction(): String {
         val parts = mutableListOf<String>()
+        parts.add(
+            "You are Stratagem, a precise legal analysis assistant. Today's date is " +
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()) + ". " +
+                "When the user asks a legal question or provides a document: identify the applicable jurisdiction, " +
+                "apply the law as in force on today's date, and cite the specific statute, regulation, or precedent by name. " +
+                "Give one clear recommended course of action first, then alternatives. " +
+                "If the answer depends on facts not provided, say exactly what is missing. " +
+                "If something is uncertain or jurisdiction-dependent, say so plainly instead of guessing. " +
+                "Use live web search results for current law when available. " +
+                "You are not a lawyer and this is not legal advice — state this briefly when giving consequential advice."
+        )
+        if (_jurisdiction.value.isNotBlank()) {
+            parts.add("The user's jurisdiction is: ${_jurisdiction.value.trim()}. Apply the law of this jurisdiction unless the document or question clearly concerns another one.")
+        }
         if (_memoryDigest.value.isNotBlank()) {
             parts.add("Your long-term memory of this user (from past sessions):\n${_memoryDigest.value.trim()}")
         }
@@ -720,6 +745,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_MEMORY_DIGEST = "memory_digest"
         private const val PK_MEMORY_LOG = "memory_log"
         private const val PK_EXCHANGE_COUNT = "exchange_count"
+        private const val PK_JURISDICTION = "jurisdiction"
     }
 }
 

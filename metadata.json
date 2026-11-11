@@ -1,6 +1,6 @@
 {
-  "name": "JaggedGem",
-  "description": "An independent, Google-free Android AI chat assistant with voice input and natural text-to-speech, powered by the Mistral API.",
+  "name": "Stratagem",
+  "description": "A jurisdiction-aware legal AI: analyze any legal document, dispute, or question with live-searched, current law for your specific area and date. Voice, document upload, and case tracking included.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
