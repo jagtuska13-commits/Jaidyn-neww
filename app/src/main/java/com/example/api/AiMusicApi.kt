@@ -91,6 +91,7 @@ object AiMusicApi {
                 }
             }
             if (audioUrl != null) break
+            }
         }
 
         val url = audioUrl ?: throw Exception("Timed out waiting for track")
