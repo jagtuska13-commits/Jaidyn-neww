@@ -149,7 +149,7 @@ object MusicSynth {
             val p = i + s0
             if (p >= mix.size) break
             val t = i.toFloat() / SAMPLE_RATE
-            val env = Math.min(1f, i / 400f) * Math.exp(-t * 2.5)
+            val env = (Math.min(1f, i / 400f) * Math.exp(-t * 2.5)).toFloat()
             var v = 0f
             for (h in 1..harmonics) v += Math.sin(2 * Math.PI * freq * h * t).toFloat() / h
             mix[p] += v * env * amp
@@ -204,8 +204,8 @@ object MusicSynth {
             val p = i + s0
             if (p >= mix.size) break
             val t = i.toFloat() / SAMPLE_RATE
-            val f = 110f * Math.exp(-t * 22).toFloat() + 42f
-            val env = Math.exp(-t * 9).toFloat()
+            val f = 110f * Math.exp((-t * 22).toDouble()).toFloat() + 42f
+            val env = Math.exp((-t * 9).toDouble()).toFloat()
             mix[p] += Math.sin(2 * Math.PI * f * t).toFloat() * env * amp
         }
     }
@@ -221,7 +221,7 @@ object MusicSynth {
             val t = i.toFloat() / SAMPLE_RATE
             val white = (Math.random() * 2 - 1).toFloat()
             lp += alpha * (white - lp)
-            val env = Math.exp(-t * (if (cutoff > 4000f) 60 else 22)).toFloat()
+            val env = Math.exp((-t * (if (cutoff > 4000f) 60 else 22)).toDouble()).toFloat()
             mix[p] += lp * env * amp
         }
     }
