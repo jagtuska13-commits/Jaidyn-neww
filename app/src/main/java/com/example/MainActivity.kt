@@ -161,41 +161,52 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 @Composable
 fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
     val corner = RoundedCornerShape(
-        topStart = if (isUser) 24.dp else 8.dp,
-        topEnd = if (isUser) 8.dp else 24.dp,
-        bottomStart = 24.dp,
-        bottomEnd = 24.dp
+        topStart = if (isUser) 26.dp else 10.dp,
+        topEnd = if (isUser) 10.dp else 26.dp,
+        bottomStart = 26.dp,
+        bottomEnd = 26.dp
     )
     val tint = if (isUser) Color(0xFF00E5C7) else Color(0xFF80DEFF)
-    val fill = if (isUser) Color(0xFF00303F) else Color(0xFF0F172A)
 
     Box(
         modifier = Modifier
             .widthIn(max = 300.dp)
             .graphicsLayer {
-                shadowElevation = 14f
-                ambientShadowColor = tint.copy(alpha = 0.2f)
-                spotShadowColor = tint.copy(alpha = 0.3f)
+                shadowElevation = 10f
+                ambientShadowColor = tint.copy(alpha = 0.16f)
+                spotShadowColor = tint.copy(alpha = 0.24f)
                 shape = corner
                 clip = false
             }
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.22f),
-                        Color.White.copy(alpha = 0.06f)
+                        Color.White.copy(alpha = 0.30f),
+                        Color.White.copy(alpha = 0.12f),
+                        Color.White.copy(alpha = 0.05f)
                     )
                 ),
                 corner
             )
-            .background(fill.copy(alpha = 0.35f), corner)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.0f),
+                        Color.White.copy(alpha = 0.14f)
+                    ),
+                    startY = 0f,
+                    endY = 900f
+                ),
+                corner
+            )
+            .background(Color(0xFF0A0E1A).copy(alpha = 0.22f), corner)
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.5f),
-                        tint.copy(alpha = 0.4f),
-                        Color.White.copy(alpha = 0.08f)
+                        Color.White.copy(alpha = 0.65f),
+                        tint.copy(alpha = 0.28f),
+                        Color.White.copy(alpha = 0.05f)
                     )
                 ),
                 shape = corner
@@ -212,10 +223,22 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
                     Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.White.copy(alpha = 0.7f),
+                            Color.White.copy(alpha = 0.8f),
                             Color.Transparent
                         )
                     )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .height(20.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent)
+                    ),
+                    corner
                 )
         )
         content()
@@ -226,21 +249,27 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
 fun BubbleEntrance(isUser: Boolean, content: @Composable () -> Unit) {
     val progress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMediumLow
+        if (isUser) {
+            progress.snapTo(0.6f)
+            progress.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 900f)
             )
-        )
+        } else {
+            progress.animateTo(
+                1f,
+                tween(450, easing = FastOutSlowInEasing)
+            )
+        }
     }
     Box(
         modifier = Modifier.graphicsLayer {
             val p = progress.value
-            alpha = (p * 2f).coerceIn(0f, 1f)
-            scaleX = 0.6f + 0.4f * p
-            scaleY = 0.6f + 0.4f * p
-            translationX = (if (isUser) 140f else -140f) * (1f - p)
+            alpha = if (isUser) 1f else (p * 1.4f).coerceIn(0f, 1f)
+            scaleX = 0.75f + 0.25f * p
+            scaleY = 0.75f + 0.25f * p
+            translationX = if (isUser) (1f - p) * 40f else 0f
+            translationY = if (isUser) 0f else (1f - p) * 46f
         }
     ) {
         content()
@@ -296,6 +325,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val userName by viewModel.userName.collectAsState()
     val userAbout by viewModel.userAbout.collectAsState()
     val jurisdiction by viewModel.jurisdiction.collectAsState()
+    val legalDetail by viewModel.legalDetail.collectAsState()
+    val citeSources by viewModel.citeSources.collectAsState()
     val speakReplies by viewModel.speakReplies.collectAsState()
     val useClonedVoice by viewModel.useClonedVoice.collectAsState()
     val useLiveSearch by viewModel.useLiveSearch.collectAsState()
@@ -318,21 +349,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
-    var showMusic by remember { mutableStateOf(false) }
     var splashGone by remember { mutableStateOf(false) }
-    val hasAssistantReply = chatHistory.any { !it.isUser }
-
-    LaunchedEffect(hasAssistantReply) {
-        if (hasAssistantReply) {
-            kotlinx.coroutines.delay(400)
-            splashGone = true
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(6000)
-        splashGone = true
-    }
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -481,16 +498,13 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             visible = !splashGone,
             exit = scaleOut(tween(450, easing = FastOutSlowInEasing)) + fadeOut(tween(350))
         ) {
-            StratagemSplash()
+            Box(modifier = Modifier.fillMaxSize().clickable { splashGone = true }) {
+                StratagemSplash()
+            }
         }
 
-        Crossfade(targetState = showDisputes || showMusic, label = "screen") { full ->
-        if (showMusic) {
-            MusicScreen(
-                viewModel = viewModel,
-                onBack = { showMusic = false }
-            )
-        } else if (full) {
+        Crossfade(targetState = showDisputes, label = "screen") { full ->
+        if (full) {
             DisputesScreen(
                 viewModel = viewModel,
                 onBack = { showDisputes = false },
@@ -527,9 +541,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     )
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showMusic = true }) {
-                        Text("♪", fontSize = 22.sp, color = Color.White)
-                    }
                     IconButton(onClick = { showDisputes = true }) {
                         Text("⚖️", fontSize = 20.sp)
                     }
@@ -592,7 +603,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 if (isLoading) {
                     item(key = "typing-indicator") {
                         Row(modifier = Modifier.fillMaxWidth().animateItem(), horizontalArrangement = Arrangement.Start) {
-                            TypingIndicator()
+                            StrataLoader()
                         }
                     }
                 }
@@ -672,6 +683,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             AnimatedSendButton(
                                 enabled = (inputText.isNotBlank() || selectedImageBase64 != null || selectedDocText != null) && !isLoading,
                                 onClick = {
+                                    splashGone = true
                                     viewModel.sendMessage(
                                         inputText,
                                         context.cacheDir,
@@ -758,6 +770,44 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         placeholder = "e.g. New South Wales, Australia / California, USA",
                         minHeight = 52.dp
                     )
+
+                    Text("LEGAL DETAIL LEVEL", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("simple" to "Plain", "standard" to "Standard", "detailed" to "Detailed").forEach { (key, label) ->
+                            val selected = legalDetail == key
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (selected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .border(1.dp, if (selected) Color.Transparent else Color(0x33FFFFFF), RoundedCornerShape(14.dp))
+                                    .clickable { viewModel.updateLegalDetail(key) }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(label, color = if (selected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Cite current law", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text("Name the statute, regulation, or case for every answer", color = Color(0x80FFFFFF), fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = citeSources,
+                            onCheckedChange = { viewModel.setCiteSources(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00FFCC),
+                                checkedTrackColor = Color(0x3300FFCC)
+                            )
+                        )
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1109,7 +1159,7 @@ fun DisputesScreen(
                                 .padding(20.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TypingIndicator()
+                            StrataLoader()
                         }
                     }
                 }
@@ -1319,261 +1369,66 @@ fun StratagemSplash() {
 }
 
 @Composable
-fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
-    val isComposing by viewModel.isComposing.collectAsState()
-    val composeStage by viewModel.composeStage.collectAsState()
-    val currentSong by viewModel.currentSong.collectAsState()
-    var description by remember { mutableStateOf("") }
-    var selectedGenre by remember { mutableStateOf("Auto") }
-    var myLyrics by remember { mutableStateOf("") }
-    var isWritingLyrics by remember { mutableStateOf(false) }
-    var useProVocals by remember { mutableStateOf(false) }
-    val proConfigured by remember { mutableStateOf(viewModel.isProMusicConfigured()) }
-    var composeError by remember { mutableStateOf(false) }
-    var savedMsg by remember { mutableStateOf(false) }
-    val scrollState = rememberScrollState()
+fun StrataLoader() {
+    val transition = rememberInfiniteTransition(label = "strata")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing)),
+        label = "rotation"
+    )
+    val morph by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1300, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "morph"
+    )
 
-    Column(
+    Row(
         modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .background(Color(0x14FFFFFF), RoundedCornerShape(28.dp))
+            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(28.dp))
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Text("←", fontSize = 22.sp, color = Color.White)
-                }
-                Text(
-                    "MUSIC STUDIO",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 3.sp,
-                    style = TextStyle(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFFFF007F), Color(0xFFFFB703))
-                        )
-                    )
+        Box(contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.size(36.dp)) {
+                drawArc(
+                    brush = Brush.sweepGradient(
+                        colors = listOf(Color(0xFF00FFCC), Color(0xFF0077B6), Color(0xFF7B2CBF), Color(0xFF00FFCC))
+                    ),
+                    startAngle = rotation,
+                    sweepAngle = 300f,
+                    useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
                 )
             }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
             Text(
-                "Describe your song — or paste your own lyrics — pick a beat, and Stratagem writes, sings, and produces the full track.",
-                color = Color(0x80FFFFFF),
-                fontSize = 13.sp
-            )
-
-            BasicTextField(
-                value = description,
-                onValueChange = { description = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 64.dp)
-                    .background(Color(0x1AFFFFFF), RoundedCornerShape(18.dp))
-                    .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                decorationBox = { inner ->
-                    Box {
-                        if (description.isEmpty()) {
-                            Text(
-                                "e.g. a chill lo-fi track about late nights in the city...",
-                                color = Color(0x60FFFFFF),
-                                fontSize = 14.sp
-                            )
-                        }
-                        inner()
-                    }
+                "S",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+                modifier = Modifier.graphicsLayer {
+                    val pulse = 0.75f + 0.25f * morph
+                    scaleX = pulse
+                    scaleY = pulse
+                    alpha = 0.35f + 0.65f * morph
                 }
             )
-
-            Text("PICK A BEAT / GENRE", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-
-            val genres = listOf("Auto", "Trap", "Hip-Hop", "House", "EDM", "Lo-fi", "Rock", "Pop", "Ballad", "Ambient", "Reggaeton", "Afrobeats")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(genres) { genre ->
-                    val selected = genre == selectedGenre
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                if (selected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
-                                RoundedCornerShape(16.dp)
-                            )
-                            .border(
-                                1.dp,
-                                if (selected) Color.Transparent else Color(0x33FFFFFF),
-                                RoundedCornerShape(16.dp)
-                            )
-                            .clickable { selectedGenre = genre }
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Text(genre, color = if (selected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Pro AI vocals (real singing)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        if (proConfigured) "Studio-quality singing via music AI" else "Needs MUSIC_API_TOKEN secret — falls back to built-in synth",
-                        color = Color(0x80FFFFFF),
-                        fontSize = 11.sp
-                    )
-                }
-                Switch(
-                    checked = useProVocals && proConfigured,
-                    enabled = proConfigured,
-                    onCheckedChange = { useProVocals = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFF00FFCC),
-                        checkedTrackColor = Color(0x3300FFCC)
-                    )
-                )
-            }
-
-            Text("YOUR LYRICS (optional)", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-
-            BasicTextField(
-                value = myLyrics,
-                onValueChange = { myLyrics = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 100.dp, max = 260.dp)
-                    .background(Color(0x14FFFFFF), RoundedCornerShape(18.dp))
-                    .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                textStyle = TextStyle(color = Color.White, fontSize = 13.sp, lineHeight = 19.sp),
-                decorationBox = { inner ->
-                    Box {
-                        if (myLyrics.isEmpty()) {
-                            Text(
-                                "Write or paste your own lyrics here...\nOr leave blank and let the AI write them.",
-                                color = Color(0x60FFFFFF),
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp
-                            )
-                        }
-                        inner()
-                    }
-                }
-            )
-
-            OutlinedButton(
-                onClick = {
-                    isWritingLyrics = true
-                    viewModel.writeLyrics(description.ifBlank { "a song about something meaningful to the user" }, selectedGenre) { lyrics ->
-                        isWritingLyrics = false
-                        if (lyrics != null) myLyrics = lyrics
-                    }
-                },
-                enabled = !isWritingLyrics && !isComposing,
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text(
-                    if (isWritingLyrics) "Writing lyrics..." else "✨ AI write lyrics for me",
-                    color = Color(0xFFFFB703),
-                    fontSize = 13.sp
-                )
-            }
-
-            Button(
-                onClick = {
-                    composeError = false
-                    savedMsg = false
-                    viewModel.composeSong(description, selectedGenre, myLyrics.ifBlank { null }, useProVocals && proConfigured) { ok ->
-                        if (!ok) composeError = true
-                    }
-                },
-                enabled = !isComposing && description.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF)),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Text(
-                    if (isComposing) composeStage.ifBlank { "Composing..." } else "♪ Compose my song",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (composeError) {
-                Text("Composition failed. Try again with a shorter description.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
-            }
-
-            if (isComposing) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    TypingIndicator()
-                }
-            }
-
-            currentSong?.let { song ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
-                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
-                        .padding(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(song.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        Text(song.style, color = Color(0xFFFFB703), fontSize = 11.sp)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = { viewModel.playSong(song.filePath) },
-                            colors = ButtonDefaults.buttonColors(Color(0x3300FFCC)),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("▶ Play", color = Color.White, fontSize = 13.sp)
-                        }
-                        OutlinedButton(
-                            onClick = { savedMsg = viewModel.saveSongToDownloads(song) },
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("Save to Downloads", color = Color(0xFF00FFCC), fontSize = 13.sp)
-                        }
-                    }
-                    if (savedMsg) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("Saved to Downloads ✓", color = Color(0xFF00FFCC), fontSize = 12.sp)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text("LYRICS", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        song.lyrics,
-                        color = Color(0xB3FFFFFF),
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
         }
+        Text(
+            when ((morph * 3).toInt()) {
+                0 -> "Researching the law"
+                1 -> "Checking jurisdiction"
+                else -> "Preparing your answer"
+            },
+            color = Color(0x99FFFFFF),
+            fontSize = 12.sp
+        )
     }
 }

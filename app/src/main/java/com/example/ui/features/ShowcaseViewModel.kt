@@ -9,12 +9,8 @@ import org.json.JSONObject
 import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.api.AiMusicApi
 import com.example.api.ChatMessagePayload
 import com.example.api.MistralApi
-import com.example.api.MusicSynth
-import com.example.api.SongSection
-import com.example.api.SongSpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,13 +18,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
-
-data class SongResult(
-    val title: String,
-    val lyrics: String,
-    val filePath: String,
-    val style: String
-)
 
 enum class DisputeStatus { DRAFTED, SENT, AWAITING, RESOLVED }
 
@@ -122,24 +111,31 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     private val _jurisdiction = MutableStateFlow(prefs.getString(PK_JURISDICTION, "") ?: "")
     val jurisdiction: StateFlow<String> = _jurisdiction.asStateFlow()
 
+    private val _legalDetail = MutableStateFlow(prefs.getString(PK_LEGAL_DETAIL, "standard") ?: "standard")
+    val legalDetail: StateFlow<String> = _legalDetail.asStateFlow()
+
+    private val _citeSources = MutableStateFlow(prefs.getBoolean(PK_CITE_SOURCES, true))
+    val citeSources: StateFlow<Boolean> = _citeSources.asStateFlow()
+
     fun updateJurisdiction(value: String) {
         _jurisdiction.value = value
         prefs.edit().putString(PK_JURISDICTION, value).apply()
+    }
+
+    fun updateLegalDetail(value: String) {
+        _legalDetail.value = value
+        prefs.edit().putString(PK_LEGAL_DETAIL, value).apply()
+    }
+
+    fun setCiteSources(enabled: Boolean) {
+        _citeSources.value = enabled
+        prefs.edit().putBoolean(PK_CITE_SOURCES, enabled).apply()
     }
 
     private val _memoryDigest = MutableStateFlow(prefs.getString(PK_MEMORY_DIGEST, "") ?: "")
     val memoryDigest: StateFlow<String> = _memoryDigest.asStateFlow()
 
     private var exchangeCount = prefs.getInt(PK_EXCHANGE_COUNT, 0)
-
-    private val _isComposing = MutableStateFlow(false)
-    val isComposing: StateFlow<Boolean> = _isComposing.asStateFlow()
-
-    private val _currentSong = MutableStateFlow<SongResult?>(null)
-    val currentSong: StateFlow<SongResult?> = _currentSong.asStateFlow()
-
-    private val _composeStage = MutableStateFlow("")
-    val composeStage: StateFlow<String> = _composeStage.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
 
@@ -325,6 +321,14 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         )
         if (_jurisdiction.value.isNotBlank()) {
             parts.add("The user's jurisdiction is: ${_jurisdiction.value.trim()}. Apply the law of this jurisdiction unless the document or question clearly concerns another one.")
+        }
+        if (_citeSources.value) {
+            parts.add("Always cite the specific statute, regulation, or case you rely on, by name and section.")
+        }
+        when (_legalDetail.value) {
+            "simple" -> parts.add("Explain in plain English a non-lawyer can act on; keep legal jargon minimal.")
+            "detailed" -> parts.add("Be thorough: include relevant history of the law, exceptions, deadlines, and procedural steps.")
+            else -> parts.add("Balance plain English with legal precision.")
         }
         if (_memoryDigest.value.isNotBlank()) {
             parts.add("Your long-term memory of this user (from past sessions):\n${_memoryDigest.value.trim()}")
@@ -542,191 +546,6 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun writeLyrics(description: String, genre: String, onDone: (String?) -> Unit) {
-        viewModelScope.launch {
-            try {
-                val genreLine = if (genre != "Auto") "Genre: $genre.\n" else ""
-                val prompt = "Write original song lyrics based on: $description\n\n$genreLine" +
-                    "Return ONLY the lyrics text with [Verse]/[Chorus]/[Bridge] tags, no JSON, no commentary. " +
-                    "Make them singable: strong rhythm, natural rhymes, lines of similar length."
-                val lyrics = MistralApi.chat(
-                    history = listOf(ChatMessagePayload(role = "user", text = prompt)),
-                    systemInstruction = "You are a professional songwriter. Return only lyrics."
-                )
-                onDone(lyrics.trim().ifBlank { null })
-            } catch (e: Exception) {
-                onDone(null)
-            }
-        }
-    }
-
-    fun isProMusicConfigured(): Boolean = AiMusicApi.isConfigured()
-
-    fun composeSong(description: String, genre: String, userLyrics: String?, useProVocals: Boolean, onDone: (Boolean) -> Unit) {
-        if (_isComposing.value || description.isBlank()) return
-        _isComposing.value = true
-        _composeStage.value = "Writing lyrics and composition..."
-        viewModelScope.launch {
-            try {
-                if (useProVocals && AiMusicApi.isConfigured()) {
-                    try {
-                        composeWithProApi(description, genre, userLyrics)
-                        onDone(true)
-                        return@launch
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        _composeStage.value = "Pro engine unavailable — using built-in synth..."
-                    }
-                }
-                val lyricsDirective = if (!userLyrics.isNullOrBlank()) {
-                    "The song MUST sing exactly these lyrics (use them verbatim in the lyrics field):\n$userLyrics\n\n"
-                } else ""
-                val genreDirective = if (genre != "Auto") "The genre MUST be: $genre.\n" else ""
-                val prompt = "Write an original song based on: $description\n\n$genreDirective$lyricsDirective" +
-                    "Respond ONLY with valid JSON, no markdown: " +
-                    "{\"title\": string, \"lyrics\": string (full lyrics with [Verse]/[Chorus] tags), " +
-                    "\"bpm\": int 60-160, \"style\": short style description, " +
-                    "\"genre\": one of: trap, hiphop, drill, house, edm, techno, dance, lofi, chill, jazz, rock, metal, punk, pop, ballad, ambient, reggaeton, afrobeats, " +
-                    "\"sections\": [{\"name\": string (intro/verse/chorus/drop/bridge/outro), \"bars\": int 2-8, " +
-                    "\"chords\": array of chord symbols like Am F C G7 (4 per section), " +
-                    "\"melody\": array of melody tokens like A4:2 C5:1 E5:1 (note:beats, 8-16 tokens per section)}]}. " +
-                    "Use 5-8 sections with a real song structure. " +
-                    "Each section's melody should follow the phrasing of the lyrics sung in that section (roughly one melody note per syllable). " +
-                    "Melody notes must fit the section's chords. Tempo and genre must match the user's request."
-                val reply = MistralApi.chat(
-                    history = listOf(ChatMessagePayload(role = "user", text = prompt)),
-                    systemInstruction = "You are a professional songwriter and composer. Return only valid JSON."
-                )
-                val jsonStart = reply.indexOf('{')
-                val jsonEnd = reply.lastIndexOf('}')
-                if (jsonStart < 0 || jsonEnd <= jsonStart) throw Exception("Bad composition")
-                val json = JSONObject(reply.substring(jsonStart, jsonEnd + 1))
-                val sections = mutableListOf<SongSection>()
-                val arr = json.getJSONArray("sections")
-                for (i in 0 until arr.length()) {
-                    val s = arr.getJSONObject(i)
-                    sections.add(
-                        SongSection(
-                            name = s.optString("name", "section"),
-                            bars = s.optInt("bars", 4),
-                            chords = s.optJSONArray("chords")?.let { c ->
-                                (0 until c.length()).map { c.optString(it) }.filter { it.isNotBlank() }
-                            } ?: emptyList(),
-                            melody = s.optJSONArray("melody")?.let { m ->
-                                (0 until m.length()).map { m.optString(it) }.filter { it.isNotBlank() }
-                            } ?: emptyList()
-                        )
-                    )
-                }
-                if (sections.isEmpty()) throw Exception("No sections")
-                var effectiveLyrics = if (!userLyrics.isNullOrBlank()) userLyrics else json.optString("lyrics", "")
-                if (effectiveLyrics.isBlank()) {
-                    _composeStage.value = "Writing lyrics..."
-                    effectiveLyrics = MistralApi.chat(
-                        history = listOf(
-                            ChatMessagePayload(
-                                role = "user",
-                                text = "Write original song lyrics based on: $description. Return ONLY the lyrics with [Verse]/[Chorus] tags."
-                            )
-                        ),
-                        systemInstruction = "You are a professional songwriter. Return only lyrics."
-                    ).trim()
-                }
-                val effectiveGenre = if (genre != "Auto") genre.lowercase() else json.optString("genre", "")
-                val spec = SongSpec(
-                    bpm = json.optInt("bpm", 90),
-                    style = json.optString("style", ""),
-                    genre = effectiveGenre,
-                    lyrics = effectiveLyrics,
-                    sections = sections
-                )
-                _composeStage.value = "Rendering audio..."
-                val wavBytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                    MusicSynth.render(spec)
-                }
-                val file = File(getApplication<Application>().filesDir, "song_${System.currentTimeMillis()}.wav")
-                FileOutputStream(file).use { it.write(wavBytes) }
-                _currentSong.value = SongResult(
-                    title = json.optString("title", "Untitled"),
-                    lyrics = effectiveLyrics,
-                    filePath = file.absolutePath,
-                    style = "${spec.genre.ifBlank { spec.style }} · ${spec.bpm} BPM"
-                )
-                onDone(true)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                onDone(false)
-            } finally {
-                _isComposing.value = false
-                _composeStage.value = ""
-            }
-        }
-    }
-
-    private suspend fun composeWithProApi(description: String, genre: String, userLyrics: String?) {
-        _composeStage.value = "Writing lyrics..."
-        var lyrics = userLyrics?.trim().orEmpty()
-        if (lyrics.isBlank()) {
-            lyrics = MistralApi.chat(
-                history = listOf(
-                    ChatMessagePayload(
-                        role = "user",
-                        text = "Write original song lyrics based on: $description. Return ONLY the lyrics with [Verse]/[Chorus] tags."
-                    )
-                ),
-                systemInstruction = "You are a professional songwriter. Return only lyrics."
-            ).trim()
-        }
-        val prompt = "[Genre: ${genre.ifBlank { "modern" }}]\n" +
-            "[Vocal: clean singing vocals, studio mastered]\n" +
-            "[Mood: $description]\n\n$lyrics"
-        val audioBytes = AiMusicApi.generateTrack(prompt, lyrics) { stage -> _composeStage.value = stage }
-        val file = File(getApplication<Application>().filesDir, "song_${System.currentTimeMillis()}.mp3")
-        FileOutputStream(file).use { it.write(audioBytes) }
-        _currentSong.value = SongResult(
-            title = "${genre.ifBlank { "AI" }} track — ${description.take(40)}",
-            lyrics = lyrics,
-            filePath = file.absolutePath,
-            style = "Pro AI vocals · $genre"
-        )
-    }
-
-    fun playSong(path: String) {
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(path)
-                prepare()
-                start()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun saveSongToDownloads(song: SongResult): Boolean {
-        return try {
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                val values = android.content.ContentValues().apply {
-                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "${song.title.replace(Regex("[^\\w -]"), "")}.wav")
-                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "audio/wav")
-                }
-                val resolver = getApplication<Application>().contentResolver
-                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
-                resolver.openOutputStream(uri)?.use { it.write(File(song.filePath).readBytes()) }
-                true
-            } else {
-                false
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun clearHistory() {
-        _chatHistory.value = emptyList()
-    }
-
     override fun onCleared() {
         super.onCleared()
         mediaPlayer?.release()
@@ -746,6 +565,8 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_MEMORY_LOG = "memory_log"
         private const val PK_EXCHANGE_COUNT = "exchange_count"
         private const val PK_JURISDICTION = "jurisdiction"
+        private const val PK_LEGAL_DETAIL = "legal_detail"
+        private const val PK_CITE_SOURCES = "cite_sources"
     }
 }
 
