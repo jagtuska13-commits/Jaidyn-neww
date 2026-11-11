@@ -23,9 +23,12 @@ data class ChatMessagePayload(
 object MistralApi {
     private const val BASE_URL = "https://api.mistral.ai"
     private const val CHAT_MODEL = BuildConfig.CHAT_MODEL
-    private const val TTS_MODEL = "mistral-tts"
+    private const val TTS_MODEL = "voxtral-mini-tts-3-0"
     private const val TRANSCRIBE_MODEL = "voxtral-mini-latest"
-    private val VOICE = BuildConfig.TTS_VOICE
+    private val VOICE = when (BuildConfig.TTS_VOICE) {
+        "", "amelia" -> "gb_jane_neutral"
+        else -> BuildConfig.TTS_VOICE
+    }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -96,8 +99,9 @@ object MistralApi {
     suspend fun textToSpeech(text: String): ByteArray = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("model", TTS_MODEL)
-            .put("voice", VOICE)
+            .put("voice_id", VOICE)
             .put("input", text)
+            .put("response_format", "mp3")
 
         val request = Request.Builder()
             .url("$BASE_URL/v1/audio/speech")
@@ -107,11 +111,13 @@ object MistralApi {
             .build()
 
         client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                val err = response.body?.string().orEmpty()
-                throw Exception("Mistral TTS error ${response.code}: ${err.take(300)}")
+                throw Exception("Mistral TTS error ${response.code}: ${responseBody.take(300)}")
             }
-            response.body?.bytes() ?: throw Exception("No audio data received")
+            val audioData = JSONObject(responseBody).optString("audio_data")
+            if (audioData.isBlank()) throw Exception("No audio data received")
+            android.util.Base64.decode(audioData, android.util.Base64.NO_WRAP)
         }
     }
 

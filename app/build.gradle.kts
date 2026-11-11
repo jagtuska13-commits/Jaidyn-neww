@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.jaggedgem"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "2.0.0"
 
         val envFile = rootProject.file(".env")
         val envProps = Properties().apply {
@@ -23,7 +23,7 @@ android {
         }
         buildConfigField("String", "MISTRAL_API_KEY", "\"${envProps.getProperty("MISTRAL_API_KEY", "")}\"")
         buildConfigField("String", "CHAT_MODEL", "\"${envProps.getProperty("CHAT_MODEL", "mistral-small-latest")}\"")
-        buildConfigField("String", "TTS_VOICE", "\"${envProps.getProperty("TTS_VOICE", "amelia")}\"")
+        buildConfigField("String", "TTS_VOICE", "\"${envProps.getProperty("TTS_VOICE", "gb_jane_neutral")}\"")
     }
 
     buildTypes {

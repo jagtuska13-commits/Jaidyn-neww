@@ -98,15 +98,14 @@ class ShowcaseViewModel : ViewModel() {
     }
 
     private suspend fun performTts(cacheDir: File) {
-        val lastUserText = _chatHistory.value.lastOrNull { it.isUser }?.text
-        if (lastUserText.isNullOrBlank()) {
-            _chatHistory.value = _chatHistory.value + ChatMessage(text = "Type something for me to speak", isUser = false)
-            return
-        }
-        val audioBytes = MistralApi.textToSpeech(lastUserText)
+        val reply = MistralApi.chat(
+            history = buildHistoryPayloads(),
+            systemInstruction = _systemInstruction.value
+        )
+        val audioBytes = MistralApi.textToSpeech(reply)
         val audioBase64 = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
         _chatHistory.value = _chatHistory.value + ChatMessage(
-            text = "Audio response generated",
+            text = reply,
             isUser = false,
             audioBase64 = audioBase64
         )
@@ -131,7 +130,7 @@ class ShowcaseViewModel : ViewModel() {
     fun playAudioFromBase64(base64Str: String, cacheDir: File) {
         try {
             val audioData = Base64.decode(base64Str, Base64.DEFAULT)
-            val tempFile = File(cacheDir, "temp_audio.wav")
+            val tempFile = File(cacheDir, "temp_audio.mp3")
             FileOutputStream(tempFile).use { it.write(audioData) }
 
             mediaPlayer?.release()
