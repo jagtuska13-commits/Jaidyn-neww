@@ -30,7 +30,7 @@ jobs:
         run: |
           echo "MISTRAL_API_KEY=${{ secrets.MISTRAL_API_KEY }}" > .env
           echo "CHAT_MODEL=${{ vars.CHAT_MODEL || 'mistral-small-latest' }}" >> .env
-          echo "TTS_VOICE=${{ vars.TTS_VOICE || 'amelia' }}" >> .env
+          echo "TTS_VOICE=${{ vars.TTS_VOICE || 'gb_jane_neutral' }}" >> .env
 
       - name: Build debug APK
         run: |

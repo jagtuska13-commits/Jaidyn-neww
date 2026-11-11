@@ -81,7 +81,7 @@ fun AnimatedBlobsBackground() {
         initialValue = 0f,
         targetValue = 100f,
         animationSpec = infiniteRepeatable(
-            animation = tween(20000, easing = LinearEasing),
+            animation = tween(90000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "time"
@@ -94,9 +94,9 @@ fun AnimatedBlobsBackground() {
 
         for (i in 0 until 6) {
             val color = colors[i % colors.size]
-            val cx = w / 2 + kotlin.math.sin(time * 0.05 + i * 1.5).toFloat() * (w / 1.5f)
-            val cy = h / 2 + kotlin.math.cos(time * 0.04 + i * 2.0).toFloat() * (h / 1.5f)
-            val radius = 300f + kotlin.math.sin(time * 0.1 + i).toFloat() * 100f
+            val cx = w / 2 + kotlin.math.sin(time * 0.05 + i * 1.5).toFloat() * (w / 1.6f)
+            val cy = h / 2 + kotlin.math.cos(time * 0.04 + i * 2.0).toFloat() * (h / 1.6f)
+            val radius = 320f + kotlin.math.sin(time * 0.1 + i).toFloat() * 120f
 
             drawCircle(
                 brush = Brush.radialGradient(
@@ -155,13 +155,6 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .widthIn(max = 300.dp)
-            .graphicsLayer {
-                shadowElevation = 40f
-                ambientShadowColor = neonColor.copy(alpha = 0.5f)
-                spotShadowColor = neonColor.copy(alpha = 0.8f)
-                shape = corner
-                clip = false
-            }
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
@@ -172,11 +165,11 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
                 corner
             )
             .border(
-                width = 1.5.dp,
+                width = 1.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.6f),
-                        neonColor.copy(alpha = 0.6f),
+                        Color.White.copy(alpha = 0.35f),
+                        neonColor.copy(alpha = 0.3f),
                         Color.White.copy(alpha = 0.1f)
                     )
                 ),
@@ -209,12 +202,6 @@ fun TypingIndicator() {
     Row(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 12.dp)
-            .graphicsLayer {
-                shadowElevation = 30f
-                ambientShadowColor = Color(0xFF80DEFF).copy(alpha = 0.5f)
-                spotShadowColor = Color(0xFF80DEFF).copy(alpha = 0.8f)
-                shape = RoundedCornerShape(28.dp)
-            }
             .background(Color(0x1AFFFFFF), RoundedCornerShape(28.dp))
             .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(28.dp))
             .padding(horizontal = 20.dp, vertical = 14.dp),
