@@ -1508,7 +1508,7 @@ fun StrataLoader() {
             )
         }
         Text(
-            when (((morph * 4f).toInt()) {
+            when ((morph * 4f).toInt()) {
                 0 -> "Researching the law"
                 1 -> "Checking jurisdiction"
                 2 -> "Preparing your answer"
