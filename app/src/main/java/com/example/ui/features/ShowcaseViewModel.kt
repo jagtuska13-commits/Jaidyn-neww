@@ -132,6 +132,53 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putBoolean(PK_CITE_SOURCES, enabled).apply()
     }
 
+    private val _reported = MutableStateFlow(loadReported())
+    val reported: StateFlow<List<Pair<String, String>>> = _reported.asStateFlow()
+
+    fun reportAnswer(id: String, text: String) {
+        if (_reported.value.any { it.first == id }) return
+        _reported.value = _reported.value + (id to text)
+        persistReported()
+    }
+
+    private fun persistReported() {
+        val arr = JSONArray()
+        _reported.value.takeLast(20).forEach { (id, text) ->
+            arr.put(JSONObject().put("id", id).put("text", text.take(1000)))
+        }
+        prefs.edit().putString(PK_REPORTED, arr.toString()).apply()
+    }
+
+    private fun loadReported(): List<Pair<String, String>> {
+        return try {
+            val raw = prefs.getString(PK_REPORTED, null) ?: return emptyList()
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                o.getString("id") to o.optString("text")
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun speakMessage(text: String, audioBase64: String?, cacheDir: File) {
+        if (audioBase64 != null) {
+            playAudioFromBase64(audioBase64, cacheDir)
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val refAudio = if (_useClonedVoice.value && _clonedVoiceBase64.value.isNotBlank()) _clonedVoiceBase64.value else null
+                val audioBytes = MistralApi.textToSpeech(text, refAudio)
+                val audioB64 = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
+                playAudioFromBase64(audioB64, cacheDir)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     private val _memoryDigest = MutableStateFlow(prefs.getString(PK_MEMORY_DIGEST, "") ?: "")
     val memoryDigest: StateFlow<String> = _memoryDigest.asStateFlow()
 
@@ -319,6 +366,12 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 "Use live web search results for current law when available. " +
                 "You are not a lawyer and this is not legal advice — state this briefly when giving consequential advice."
         )
+        if (_reported.value.isNotEmpty()) {
+            parts.add(
+                "The user flagged these past answers of yours as incorrect or unhelpful. Learn from them and do not repeat those mistakes:\n" +
+                    _reported.value.takeLast(10).joinToString("\n---\n") { it.second }
+            )
+        }
         if (_jurisdiction.value.isNotBlank()) {
             parts.add("The user's jurisdiction is: ${_jurisdiction.value.trim()}. Apply the law of this jurisdiction unless the document or question clearly concerns another one.")
         }
@@ -567,6 +620,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_JURISDICTION = "jurisdiction"
         private const val PK_LEGAL_DETAIL = "legal_detail"
         private const val PK_CITE_SOURCES = "cite_sources"
+        private const val PK_REPORTED = "reported_answers"
     }
 }
 

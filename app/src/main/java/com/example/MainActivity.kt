@@ -163,24 +163,23 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 @Composable
 fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
     val corner = RoundedCornerShape(20.dp)
-    val tint = if (isUser) Color(0xFF00E5C7) else Color(0xFF80DEFF)
 
     Box(
         modifier = Modifier
             .widthIn(max = 310.dp)
             .graphicsLayer {
-                shadowElevation = 6f
-                ambientShadowColor = tint.copy(alpha = 0.12f)
-                spotShadowColor = tint.copy(alpha = 0.18f)
+                shadowElevation = 22f
+                ambientShadowColor = Color(0x99000000)
+                spotShadowColor = Color(0x8C000000)
                 shape = corner
                 clip = false
             }
-            .background(Color(0xFF060A14).copy(alpha = 0.16f), corner)
+            .background(Color(0xFF0A0E18).copy(alpha = 0.34f), corner)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.14f),
-                        Color.White.copy(alpha = 0.04f)
+                        Color.White.copy(alpha = 0.09f),
+                        Color.White.copy(alpha = 0.02f)
                     )
                 ),
                 corner
@@ -189,8 +188,8 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
                 width = 0.8.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.55f),
-                        tint.copy(alpha = 0.22f),
+                        Color.White.copy(alpha = 0.38f),
+                        Color.White.copy(alpha = 0.10f),
                         Color.White.copy(alpha = 0.04f)
                     )
                 ),
@@ -198,30 +197,6 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
             )
             .padding(horizontal = 18.dp, vertical = 14.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
-                        center = Offset.Zero,
-                        radius = 520f
-                    ),
-                    corner
-                )
-        )
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(tint.copy(alpha = 0.10f), Color.Transparent),
-                        center = Offset(520f, 900f),
-                        radius = 700f
-                    ),
-                    corner
-                )
-        )
         content()
     }
 }
@@ -308,6 +283,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val jurisdiction by viewModel.jurisdiction.collectAsState()
     val legalDetail by viewModel.legalDetail.collectAsState()
     val citeSources by viewModel.citeSources.collectAsState()
+    val reportedAnswers by viewModel.reported.collectAsState()
     val speakReplies by viewModel.speakReplies.collectAsState()
     val useClonedVoice by viewModel.useClonedVoice.collectAsState()
     val useLiveSearch by viewModel.useLiveSearch.collectAsState()
@@ -545,9 +521,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             ) {
                 items(chatHistory, key = { message -> message.id }) { message ->
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .animateItem(),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
                     ) {
                         BubbleEntrance(message.isUser) {
@@ -574,15 +548,39 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                     if (message.text.isNotBlank()) Spacer(Modifier.height(8.dp))
                                 }
                                 if (message.text.isNotBlank()) Text(message.text, color = Color.White, fontSize = 15.sp)
-                                if (message.audioBase64 != null) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Button(
-                                            onClick = {
+                                if (!message.isUser) {
+                                    val clipboard = LocalClipboardManager.current
+                                    val isReported = reportedAnswers.any { it.first == message.id }
+                                    Row(
+                                        modifier = Modifier.padding(top = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(22.dp)
+                                    ) {
+                                        Text(
+                                            "🔊",
+                                            fontSize = 15.sp,
+                                            color = Color(0xB3FFFFFF),
+                                            modifier = Modifier.clickable {
                                                 playingAudioId = message.id
-                                                viewModel.playAudioFromBase64(message.audioBase64, context.cacheDir)
-                                            },
-                                            colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))
-                                        ) { Text("🔊 Play") }
+                                                viewModel.speakMessage(message.text, message.audioBase64, context.cacheDir)
+                                            }
+                                        )
+                                        Text(
+                                            "⧉",
+                                            fontSize = 15.sp,
+                                            color = Color(0xB3FFFFFF),
+                                            modifier = Modifier.clickable {
+                                                clipboard.setText(AnnotatedString(message.text))
+                                            }
+                                        )
+                                        Text(
+                                            "🚩",
+                                            fontSize = 13.sp,
+                                            color = if (isReported) Color(0xFFFF4D6D) else Color(0x80FFFFFF),
+                                            modifier = Modifier.clickable {
+                                                viewModel.reportAnswer(message.id, message.text)
+                                            }
+                                        )
                                         if (playingAudioId == message.id) {
                                             AudioBars()
                                         }
@@ -595,7 +593,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 }
                 if (isLoading) {
                     item(key = "typing-indicator") {
-                        Row(modifier = Modifier.fillMaxWidth().animateItem(), horizontalArrangement = Arrangement.Start) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
                             StrataLoader()
                         }
                     }
@@ -1387,7 +1385,7 @@ fun StrataLoader() {
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = FastOutSlowInEasing),
+            animation = tween(4200, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "morph"
@@ -1445,9 +1443,13 @@ fun StrataLoader() {
             fun pt(i: Int): Offset {
                 val s = sPath[i]
                 val c = circlePath[i]
+                val spread = 0.5f
+                val delay = (i / 9f) * spread
+                val local = ((morph - delay) / (1f - spread)).coerceIn(0f, 1f)
+                val t = local * local * (3f - 2f * local)
                 return Offset(
-                    ((s.first + (c.first - s.first) * morph) * scale),
-                    ((s.second + (c.second - s.second) * morph) * scale)
+                    ((s.first + (c.first - s.first) * t) * scale),
+                    ((s.second + (c.second - s.second) * t) * scale)
                 )
             }
             path.moveTo(pt(0).x, pt(0).y)
@@ -1506,10 +1508,11 @@ fun StrataLoader() {
             )
         }
         Text(
-            when ((morph * 3).toInt()) {
+            when (((morph * 4f).toInt()) {
                 0 -> "Researching the law"
                 1 -> "Checking jurisdiction"
-                else -> "Preparing your answer"
+                2 -> "Preparing your answer"
+                else -> "Verifying sources"
             },
             color = Color(0x99FFFFFF),
             fontSize = 12.sp
