@@ -516,13 +516,33 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun composeSong(description: String, onDone: (Boolean) -> Unit) {
+    fun writeLyrics(description: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val prompt = "Write original song lyrics based on: $description\n\n" +
+                    "Return ONLY the lyrics text with [Verse]/[Chorus]/[Bridge] tags, no JSON, no commentary. " +
+                    "Make them singable: strong rhythm, natural rhymes, lines of similar length."
+                val lyrics = MistralApi.chat(
+                    history = listOf(ChatMessagePayload(role = "user", text = prompt)),
+                    systemInstruction = "You are a professional songwriter. Return only lyrics."
+                )
+                onDone(lyrics.trim().ifBlank { null })
+            } catch (e: Exception) {
+                onDone(null)
+            }
+        }
+    }
+
+    fun composeSong(description: String, userLyrics: String?, onDone: (Boolean) -> Unit) {
         if (_isComposing.value || description.isBlank()) return
         _isComposing.value = true
         _composeStage.value = "Writing lyrics and composition..."
         viewModelScope.launch {
             try {
-                val prompt = "Write an original song based on: $description\n\n" +
+                val lyricsDirective = if (!userLyrics.isNullOrBlank()) {
+                    "The song MUST sing exactly these lyrics (use them verbatim in the lyrics field):\n$userLyrics\n\n"
+                } else ""
+                val prompt = "Write an original song based on: $description\n\n$lyricsDirective" +
                     "Respond ONLY with valid JSON, no markdown: " +
                     "{\"title\": string, \"lyrics\": string (full lyrics with [Verse]/[Chorus] tags), " +
                     "\"bpm\": int 60-160, \"style\": short style description, " +
@@ -563,7 +583,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     bpm = json.optInt("bpm", 90),
                     style = json.optString("style", ""),
                     genre = json.optString("genre", ""),
-                    lyrics = json.optString("lyrics", ""),
+                    lyrics = if (!userLyrics.isNullOrBlank()) userLyrics else json.optString("lyrics", ""),
                     sections = sections
                 )
                 _composeStage.value = "Rendering audio..."

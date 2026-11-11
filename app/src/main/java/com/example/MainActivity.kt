@@ -1312,6 +1312,8 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
     val composeStage by viewModel.composeStage.collectAsState()
     val currentSong by viewModel.currentSong.collectAsState()
     var description by remember { mutableStateOf("") }
+    var myLyrics by remember { mutableStateOf("") }
+    var isWritingLyrics by remember { mutableStateOf(false) }
     var composeError by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -1384,11 +1386,56 @@ fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
                 }
             )
 
+            Text("YOUR LYRICS (optional)", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+            BasicTextField(
+                value = myLyrics,
+                onValueChange = { myLyrics = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 100.dp)
+                    .background(Color(0x14FFFFFF), RoundedCornerShape(18.dp))
+                    .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                textStyle = TextStyle(color = Color.White, fontSize = 13.sp, lineHeight = 19.sp),
+                decorationBox = { inner ->
+                    Box {
+                        if (myLyrics.isEmpty()) {
+                            Text(
+                                "Write or paste your own lyrics here...\nOr leave blank and let the AI write them.",
+                                color = Color(0x60FFFFFF),
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp
+                            )
+                        }
+                        inner()
+                    }
+                }
+            )
+
+            OutlinedButton(
+                onClick = {
+                    isWritingLyrics = true
+                    viewModel.writeLyrics(description.ifBlank { "a song about something meaningful to the user" }) { lyrics ->
+                        isWritingLyrics = false
+                        if (lyrics != null) myLyrics = lyrics
+                    }
+                },
+                enabled = !isWritingLyrics && !isComposing,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(
+                    if (isWritingLyrics) "Writing lyrics..." else "✨ AI write lyrics for me",
+                    color = Color(0xFFFFB703),
+                    fontSize = 13.sp
+                )
+            }
+
             Button(
                 onClick = {
                     composeError = false
                     savedMsg = false
-                    viewModel.composeSong(description) { ok ->
+                    viewModel.composeSong(description, myLyrics.ifBlank { null }) { ok ->
                         if (!ok) composeError = true
                     }
                 },

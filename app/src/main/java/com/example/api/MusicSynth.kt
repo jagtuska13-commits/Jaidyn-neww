@@ -176,11 +176,16 @@ object MusicSynth {
             }
 
             if (melody.isNotEmpty()) {
-                if (lineIdx < lyricLines.size) {
+                var sungBeats = 0f
+                val sectionBeatsAvail = bars * 4f
+                while (sungBeats < sectionBeatsAvail * 0.9f && lyricLines.isNotEmpty()) {
                     val line = lyricLines[lineIdx % lyricLines.size]
                     lineIdx++
-                    singLine(vocals, sectionStartBeat * beat, bars * 4f * beat, melody, beat, line, 0.20f * intensity)
+                    val sung = singLine(vocals, (sectionStartBeat + sungBeats) * beat, (sectionBeatsAvail - sungBeats) * beat, melody, beat, line, 0.20f * intensity)
+                    if (sung <= 0f) break
+                    sungBeats += sung
                 }
+                var startBeat = 0f
                 var startBeat = 0f
                 var noteIdx = 0
                 val sectionBeats = bars * 4f
@@ -276,12 +281,13 @@ object MusicSynth {
         beat: Float,
         line: String,
         amp: Float
-    ) {
+    ): Float {
         val sylls = syllabify(line)
-        if (sylls.isEmpty()) return
+        if (sylls.isEmpty()) return 0f
         var cursor = startTime
         var noteIdx = 0
         var prevFreq = 0f
+        var lastBeats = 0f
         for ((syllIdx, syl) in sylls.withIndex()) {
             if (cursor >= startTime + sectionDur) break
             val token = melody[noteIdx % melody.size]
@@ -289,13 +295,15 @@ object MusicSynth {
             val freq = noteToFreq(parts[0].trim()) ?: continue
             val beats = parts.getOrNull(1)?.toFloatOrNull()?.coerceIn(0.25f, 4f) ?: 1f
             val (vowel, isWordEnd) = syl
-            val dur = beats * beat * if (isWordEnd) 0.85f else 0.6f
+            val dur = beats * beat * if (isWordEnd) 0.95f else 0.72f
             singSyllable(vocals, cursor, dur, freq, prevFreq, vowel, amp)
             prevFreq = freq
             cursor += dur
+            lastBeats += beats
             noteIdx++
             if (syllIdx == sylls.size - 1) break
         }
+        return lastBeats
     }
 
     private fun singSyllable(
@@ -316,7 +324,7 @@ object MusicSynth {
         val y1 = FloatArray(3)
         val y2 = FloatArray(3)
         val coeffs = formants.map { f ->
-            val bw = 70f + f * 0.04f
+            val bw = 45f + f * 0.02f
             val r = Math.exp((-Math.PI * bw / SR).toDouble()).toFloat()
             val theta = (2 * Math.PI * f / SR).toFloat()
             floatArrayOf(2f * r * Math.cos(theta.toDouble()).toFloat(), -r * r)
@@ -336,7 +344,11 @@ object MusicSynth {
             } else freq
             val vibrato = Math.sin((2 * Math.PI * 5.6 * t).toDouble()).toFloat() * 0.006f
             val f0 = glide + vibrato
-            val source = 0.6f * saw(t, f0) + 0.4f * Math.sin((2 * Math.PI * f0 * 2 * t).toDouble()).toFloat()
+            var source = 0f
+            for (h in 1..10) {
+                source += Math.sin((2 * Math.PI * f0 * h * t).toDouble()).toFloat() / h
+            }
+            source *= 0.5f
             var v = 0f
             for (fc in 0 until 3) {
                 val y = source + coeffs[fc][0] * y1[fc] + coeffs[fc][1] * y2[fc]
@@ -344,7 +356,7 @@ object MusicSynth {
                 y1[fc] = y
                 v += y * (if (fc == 0) 1f else if (fc == 1) 0.55f else 0.3f)
             }
-            vocals[p] += softClip(v * 0.25f) * env * amp
+            vocals[p] += softClip(v * 0.22f) * env * amp
         }
     }
 
