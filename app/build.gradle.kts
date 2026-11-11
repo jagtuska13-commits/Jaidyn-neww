@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.jaggedgem"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "4.1.0"
+        versionCode = 17
+        versionName = "4.2.0"
 
         val envFile = rootProject.file(".env")
         val envProps = Properties().apply {

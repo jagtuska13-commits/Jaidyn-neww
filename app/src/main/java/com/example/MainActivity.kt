@@ -51,6 +51,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -160,53 +162,36 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 
 @Composable
 fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
-    val corner = RoundedCornerShape(
-        topStart = if (isUser) 26.dp else 10.dp,
-        topEnd = if (isUser) 10.dp else 26.dp,
-        bottomStart = 26.dp,
-        bottomEnd = 26.dp
-    )
+    val corner = RoundedCornerShape(20.dp)
     val tint = if (isUser) Color(0xFF00E5C7) else Color(0xFF80DEFF)
 
     Box(
         modifier = Modifier
-            .widthIn(max = 300.dp)
+            .widthIn(max = 310.dp)
             .graphicsLayer {
-                shadowElevation = 10f
-                ambientShadowColor = tint.copy(alpha = 0.16f)
-                spotShadowColor = tint.copy(alpha = 0.24f)
+                shadowElevation = 6f
+                ambientShadowColor = tint.copy(alpha = 0.12f)
+                spotShadowColor = tint.copy(alpha = 0.18f)
                 shape = corner
                 clip = false
             }
+            .background(Color(0xFF060A14).copy(alpha = 0.16f), corner)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.30f),
-                        Color.White.copy(alpha = 0.12f),
-                        Color.White.copy(alpha = 0.05f)
+                        Color.White.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.04f)
                     )
                 ),
                 corner
             )
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.0f),
-                        Color.White.copy(alpha = 0.14f)
-                    ),
-                    startY = 0f,
-                    endY = 900f
-                ),
-                corner
-            )
-            .background(Color(0xFF0A0E1A).copy(alpha = 0.22f), corner)
             .border(
-                width = 1.dp,
+                width = 0.8.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.65f),
-                        tint.copy(alpha = 0.28f),
-                        Color.White.copy(alpha = 0.05f)
+                        Color.White.copy(alpha = 0.55f),
+                        tint.copy(alpha = 0.22f),
+                        Color.White.copy(alpha = 0.04f)
                     )
                 ),
                 shape = corner
@@ -215,28 +200,24 @@ fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
     ) {
         Box(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .fillMaxWidth()
-                .height(1.dp)
-                .padding(horizontal = 14.dp)
+                .matchParentSize()
                 .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.White.copy(alpha = 0.8f),
-                            Color.Transparent
-                        )
-                    )
+                    Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
+                        center = Offset.Zero,
+                        radius = 520f
+                    ),
+                    corner
                 )
         )
         Box(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .fillMaxWidth()
-                .height(20.dp)
+                .matchParentSize()
                 .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent)
+                    Brush.radialGradient(
+                        colors = listOf(tint.copy(alpha = 0.10f), Color.Transparent),
+                        center = Offset(520f, 900f),
+                        radius = 700f
                     ),
                     corner
                 )
@@ -343,6 +324,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var isCloningRecording by remember { mutableStateOf(false) }
     var cloneRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
     var micAmplitude by remember { mutableStateOf(0f) }
+    var playingAudioId by remember { mutableStateOf<String?>(null) }
     var selectedDocName by remember { mutableStateOf<String?>(null) }
     var selectedDocText by remember { mutableStateOf<String?>(null) }
     var docError by remember { mutableStateOf(false) }
@@ -593,7 +575,18 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                 }
                                 if (message.text.isNotBlank()) Text(message.text, color = Color.White, fontSize = 15.sp)
                                 if (message.audioBase64 != null) {
-                                    Button(onClick = { viewModel.playAudioFromBase64(message.audioBase64, context.cacheDir) }, colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))) { Text("🔊 Play") }
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Button(
+                                            onClick = {
+                                                playingAudioId = message.id
+                                                viewModel.playAudioFromBase64(message.audioBase64, context.cacheDir)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF))
+                                        ) { Text("🔊 Play") }
+                                        if (playingAudioId == message.id) {
+                                            AudioBars()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -650,9 +643,28 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     onValueChange = { inputText = it },
                     modifier = Modifier
                         .weight(1f)
-                        .height(56.dp)
-                        .background(Color(0x26FFFFFF), RoundedCornerShape(28.dp))
-                        .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(28.dp)),
+                        .height(60.dp)
+                        .background(Color(0x0F0A0E1A), RoundedCornerShape(30.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.10f),
+                                    Color.White.copy(alpha = 0.03f)
+                                )
+                            ),
+                            RoundedCornerShape(30.dp)
+                        )
+                        .border(
+                            1.dp,
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.5f),
+                                    Color(0xFF00E5C7).copy(alpha = 0.25f),
+                                    Color.White.copy(alpha = 0.06f)
+                                )
+                            ),
+                            RoundedCornerShape(30.dp)
+                        ),
                     textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
                     decorationBox = { innerTextField ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
@@ -1368,57 +1380,128 @@ fun StratagemSplash() {
     }
 }
 
-@Composable
 fun StrataLoader() {
     val transition = rememberInfiniteTransition(label = "strata")
-    val rotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing)),
-        label = "rotation"
-    )
     val morph by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1300, easing = FastOutSlowInEasing),
+            animation = tween(1600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "morph"
+    )
+    val orbit by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
+        label = "orbit"
+    )
+    val shimmerX by transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "shimmer"
+    )
+
+    val sPath = listOf(
+        70f to 28f,
+        65f to 18f, 35f to 18f, 35f to 34f,
+        35f to 48f, 65f to 52f, 65f to 66f,
+        65f to 82f, 35f to 82f, 30f to 72f
+    )
+    val circlePath = listOf(
+        50f to 15f,
+        70f to 15f, 85f to 30f, 85f to 50f,
+        85f to 70f, 70f to 85f, 50f to 85f,
+        30f to 85f, 15f to 70f, 15f to 50f
     )
 
     Row(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 12.dp)
+            .clipToBounds()
+            .drawWithContent {
+                drawContent()
+                val w = size.width
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color.Transparent, Color(0x4000E5C7), Color.Transparent),
+                        start = Offset(w * shimmerX, 0f),
+                        end = Offset(w * (shimmerX + 0.6f), size.height)
+                    )
+                )
+            }
             .background(Color(0x14FFFFFF), RoundedCornerShape(28.dp))
             .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(28.dp))
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Canvas(modifier = Modifier.size(36.dp)) {
-                drawArc(
-                    brush = Brush.sweepGradient(
-                        colors = listOf(Color(0xFF00FFCC), Color(0xFF0077B6), Color(0xFF7B2CBF), Color(0xFF00FFCC))
-                    ),
-                    startAngle = rotation,
-                    sweepAngle = 300f,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        Canvas(modifier = Modifier.size(40.dp)) {
+            val scale = size.width / 100f
+            val path = androidx.compose.ui.graphics.Path()
+            fun pt(i: Int): Offset {
+                val s = sPath[i]
+                val c = circlePath[i]
+                return Offset(
+                    ((s.first + (c.first - s.first) * morph) * scale),
+                    ((s.second + (c.second - s.second) * morph) * scale)
                 )
             }
-            Text(
-                "S",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color.White,
-                modifier = Modifier.graphicsLayer {
-                    val pulse = 0.75f + 0.25f * morph
-                    scaleX = pulse
-                    scaleY = pulse
-                    alpha = 0.35f + 0.65f * morph
-                }
+            path.moveTo(pt(0).x, pt(0).y)
+            for (seg in 0 until 3) {
+                val a = pt(seg * 3 + 1)
+                val b = pt(seg * 3 + 2)
+                val c = pt(seg * 3 + 3)
+                path.cubicTo(a.x, a.y, b.x, b.y, c.x, c.y)
+            }
+
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0x3300E5C7), Color.Transparent),
+                    center = Offset(size.width / 2, size.height / 2),
+                    radius = size.width
+                ),
+                radius = size.width * 0.9f,
+                center = Offset(size.width / 2, size.height / 2)
+            )
+
+            drawCircle(
+                color = Color(0x2906B6D4),
+                radius = size.width * 0.48f,
+                center = Offset(size.width / 2, size.height / 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 1.2.dp.toPx(),
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+                        floatArrayOf(3.dp.toPx(), 5.dp.toPx(), 9.dp.toPx(), 5.dp.toPx()),
+                        phase = orbit
+                    )
+                )
+            )
+
+            drawPath(
+                path = path,
+                brush = Brush.sweepGradient(
+                    colors = listOf(Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFF59E0B), Color(0xFF06B6D4)),
+                    center = Offset(size.width / 2, size.height / 2)
+                ),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 9f,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                ),
+                alpha = 0.25f
+            )
+            drawPath(
+                path = path,
+                brush = Brush.sweepGradient(
+                    colors = listOf(Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFF59E0B), Color(0xFF06B6D4)),
+                    center = Offset(size.width / 2, size.height / 2)
+                ),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 2.6.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
             )
         }
         Text(
@@ -1430,5 +1513,29 @@ fun StrataLoader() {
             color = Color(0x99FFFFFF),
             fontSize = 12.sp
         )
+    }
+}
+
+@Composable
+fun AudioBars() {
+    val transition = rememberInfiniteTransition(label = "eq")
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(4) { i ->
+            val h by transition.animateFloat(
+                initialValue = 4f,
+                targetValue = 16f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(240 + i * 90, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "bar$i"
+            )
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(h.dp)
+                    .background(Color(0xFF00E5C7), RoundedCornerShape(2.dp))
+            )
+        }
     }
 }
