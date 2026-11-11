@@ -1380,6 +1380,7 @@ fun StratagemSplash() {
     }
 }
 
+@Composable
 fun StrataLoader() {
     val transition = rememberInfiniteTransition(label = "strata")
     val morph by transition.animateFloat(
