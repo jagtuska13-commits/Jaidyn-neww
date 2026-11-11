@@ -27,6 +27,8 @@ data class ChatMessage(
 )
 
 class ShowcaseViewModel(application: Application) : AndroidViewModel(application) {
+    private val prefs: SharedPreferences = application.getSharedPreferences("jaggedgem_prefs", Context.MODE_PRIVATE)
+
     private val _chatHistory = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatHistory: StateFlow<List<ChatMessage>> = _chatHistory.asStateFlow()
 
@@ -61,8 +63,6 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     val isSavingVoice: StateFlow<Boolean> = _isSavingVoice.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
-
-    private val prefs: SharedPreferences = application.getSharedPreferences("jaggedgem_prefs", Context.MODE_PRIVATE)
 
     fun updatePersonaName(value: String) {
         _personaName.value = value

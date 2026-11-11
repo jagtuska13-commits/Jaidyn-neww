@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.example
 
 import android.Manifest
@@ -36,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,6 +52,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -248,6 +252,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var voiceRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
     var isCloningRecording by remember { mutableStateOf(false) }
     var cloneRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
+    var micAmplitude by remember { mutableStateOf(0f) }
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -327,10 +332,25 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(chatHistory.size, isLoading) {
+    LaunchedEffect(chatHistory.size) {
         if (chatHistory.isNotEmpty()) {
-            listState.animateScrollToItem(chatHistory.size + if (isLoading) 0 else -1)
+            listState.animateScrollToItem(chatHistory.lastIndex)
         }
+    }
+
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(imeVisible) {
+        if (imeVisible && chatHistory.isNotEmpty()) {
+            listState.animateScrollToItem(chatHistory.lastIndex)
+        }
+    }
+
+    LaunchedEffect(isRecording) {
+        while (isRecording) {
+            micAmplitude = voiceRecorder?.amplitude ?: 0f
+            kotlinx.coroutines.delay(50)
+        }
+        micAmplitude = 0f
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -432,6 +452,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             PulsingMicButton(
                                 isRecording = isRecording,
                                 isTranscribing = isTranscribing,
+                                amplitude = micAmplitude,
                                 onToggle = {
                                     if (isRecording) {
                                         stopRecording()
@@ -640,7 +661,7 @@ fun DrawerTextField(
     }
 }
 @Composable
-fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, onToggle: () -> Unit) {
+fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, amplitude: Float, onToggle: () -> Unit) {
     val pulse by rememberInfiniteTransition(label = "mic-pulse").animateFloat(
         initialValue = 1f,
         targetValue = 1.25f,
@@ -650,7 +671,12 @@ fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, onToggle: ()
         ),
         label = "pulse"
     )
-    val scale = if (isRecording) pulse else 1f
+    val ampScale by animateFloatAsState(
+        targetValue = 1f + amplitude * 0.6f,
+        animationSpec = tween(80),
+        label = "amp-scale"
+    )
+    val scale = if (isRecording) pulse * ampScale else 1f
 
     Box(
         modifier = Modifier
@@ -660,21 +686,46 @@ fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, onToggle: ()
                 scaleY = scale
             }
             .background(
-                if (isRecording) Color(0xFFFF4D6D).copy(alpha = 0.25f) else Color.Transparent,
+                if (isRecording) Color(0xFFFF4D6D).copy(alpha = 0.25f + amplitude * 0.35f) else Color.Transparent,
                 CircleShape
             )
             .clickable(onClick = onToggle),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            when {
-                isRecording -> "⏹️"
-                isTranscribing -> "⏳"
-                else -> "🎙️"
-            },
-            fontSize = 18.sp,
-            color = if (isRecording) Color(0xFFFF4D6D) else Color.White
-        )
+        if (isRecording) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(4) { i ->
+                    val barPhase by rememberInfiniteTransition(label = "bar$i").animateFloat(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(280 + i * 90, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "bar-phase"
+                    )
+                    val barHeight = (6 + 16 * amplitude + 8 * barPhase * amplitude.coerceAtLeast(0.15f)).dp
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(barHeight.coerceAtMost(26.dp))
+                            .background(Color(0xFFFF4D6D), RoundedCornerShape(2.dp))
+                    )
+                }
+            }
+        } else {
+            Text(
+                when {
+                    isTranscribing -> "⏳"
+                    else -> "🎙️"
+                },
+                fontSize = 18.sp,
+                color = Color.White
+            )
+        }
     }
 }
 

@@ -14,6 +14,10 @@ class VoiceRecorder(private val outputFile: File) {
     @Volatile
     private var isRecording = false
 
+    @Volatile
+    var amplitude: Float = 0f
+        private set
+
     val sampleRate = 16000
 
     @SuppressLint("MissingPermission")
@@ -50,10 +54,15 @@ class VoiceRecorder(private val outputFile: File) {
             while (isRecording) {
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: 0
                 if (read > 0) {
+                    var sumSquares = 0.0
                     for (i in 0 until read) {
+                        val s = buffer[i].toInt()
+                        sumSquares += (s * s).toDouble()
                         pcmData.write((buffer[i].toInt() and 0xFF))
                         pcmData.write((buffer[i].toInt() shr 8) and 0xFF)
                     }
+                    val rms = kotlin.math.sqrt(sumSquares / read)
+                    amplitude = (rms / 8000.0).toFloat().coerceIn(0f, 1f)
                 }
             }
             writeWavFile(pcmData.toByteArray())
@@ -64,6 +73,7 @@ class VoiceRecorder(private val outputFile: File) {
 
     fun stop(onSaved: (File) -> Unit) {
         isRecording = false
+        amplitude = 0f
         recordingThread?.join()
         audioRecord?.stop()
         audioRecord?.release()
