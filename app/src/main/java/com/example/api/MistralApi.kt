@@ -147,6 +147,49 @@ object MistralApi {
         }
     }
 
+    suspend fun webSearch(query: String, maxResults: Int = 4): String = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://html.duckduckgo.com/html/?q=" + java.net.URLEncoder.encode(query, "UTF-8")
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext ""
+                val html = response.body?.string().orEmpty()
+                val linkRegex = Regex("class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+                val snippetRegex = Regex("class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+                val links = linkRegex.findAll(html).take(maxResults).toList()
+                val snippets = snippetRegex.findAll(html).take(maxResults).toList()
+                val sb = StringBuilder()
+                links.forEachIndexed { i, match ->
+                    val rawUrl = match.groupValues[1]
+                    val realUrl = Regex("uddg=([^&]+)").find(rawUrl)?.groupValues?.get(1)
+                        ?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: rawUrl
+                    val title = stripHtml(match.groupValues[2])
+                    val snippet = if (i < snippets.size) stripHtml(snippets[i].groupValues[1]) else ""
+                    sb.append("${i + 1}. $title — $snippet\nSource: $realUrl\n")
+                }
+                sb.toString()
+            }
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    private fun stripHtml(s: String): String {
+        return s.replace("<[^>]*>".toRegex(), "")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#x27;", "'")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("\n+", " ")
+            .trim()
+    }
+
     private fun File.asRequestBody(mediaType: okhttp3.MediaType) =
         okhttp3.RequestBody.create(mediaType, this)
 }

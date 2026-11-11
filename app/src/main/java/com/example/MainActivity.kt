@@ -245,6 +245,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val userAbout by viewModel.userAbout.collectAsState()
     val speakReplies by viewModel.speakReplies.collectAsState()
     val useClonedVoice by viewModel.useClonedVoice.collectAsState()
+    val useLiveSearch by viewModel.useLiveSearch.collectAsState()
     val clonedVoiceBase64 by viewModel.clonedVoiceBase64.collectAsState()
     val isSavingVoice by viewModel.isSavingVoice.collectAsState()
 
@@ -596,6 +597,25 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         Switch(
                             checked = speakReplies,
                             onCheckedChange = { viewModel.setSpeakReplies(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00FFCC),
+                                checkedTrackColor = Color(0x3300FFCC)
+                            )
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Live web search", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Text("Searches the web for current facts before replying", color = Color(0x80FFFFFF), fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = useLiveSearch,
+                            onCheckedChange = { viewModel.setUseLiveSearch(it) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color(0xFF00FFCC),
                                 checkedTrackColor = Color(0x3300FFCC)

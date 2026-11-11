@@ -85,6 +85,14 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     private val _isAnalyzing = MutableStateFlow(false)
     val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
 
+    private val _useLiveSearch = MutableStateFlow(prefs.getBoolean(PK_LIVE_SEARCH, true))
+    val useLiveSearch: StateFlow<Boolean> = _useLiveSearch.asStateFlow()
+
+    private val _memoryDigest = MutableStateFlow(prefs.getString(PK_MEMORY_DIGEST, "") ?: "")
+    val memoryDigest: StateFlow<String> = _memoryDigest.asStateFlow()
+
+    private var exchangeCount = prefs.getInt(PK_EXCHANGE_COUNT, 0)
+
     private var mediaPlayer: MediaPlayer? = null
 
     fun updatePersonaName(value: String) {
@@ -115,6 +123,11 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     fun setUseClonedVoice(enabled: Boolean) {
         _useClonedVoice.value = enabled
         prefs.edit().putBoolean(PK_USE_CLONED, enabled).apply()
+    }
+
+    fun setUseLiveSearch(enabled: Boolean) {
+        _useLiveSearch.value = enabled
+        prefs.edit().putBoolean(PK_LIVE_SEARCH, enabled).apply()
     }
 
     fun saveVoiceSample(wavFile: File) {
@@ -149,10 +162,15 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             try {
+                val searchContext = if (_useLiveSearch.value && text.isNotBlank()) {
+                    val results = MistralApi.webSearch(text)
+                    if (results.isNotBlank()) "Live web search results for the user's latest message (use for current facts, cite sources when relevant):\n$results" else ""
+                } else ""
                 val reply = MistralApi.chat(
                     history = buildHistoryPayloads(),
-                    systemInstruction = buildSystemInstruction()
+                    systemInstruction = buildSystemInstruction() + if (searchContext.isNotBlank()) "\n\n$searchContext" else ""
                 )
+                recordExchange(text, reply)
                 var audioBase64: String? = null
                 if (_speakReplies.value) {
                     try {
@@ -182,8 +200,56 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private fun recordExchange(userText: String, assistantReply: String) {
+        try {
+            val log = JSONArray(prefs.getString(PK_MEMORY_LOG, "[]"))
+            log.put(JSONObject().put("role", "user").put("text", userText.take(2000)).put("ts", System.currentTimeMillis()))
+            log.put(JSONObject().put("role", "assistant").put("text", assistantReply.take(2000)).put("ts", System.currentTimeMillis()))
+            while (log.length() > 200) log.remove(0)
+            prefs.edit().putString(PK_MEMORY_LOG, log.toString()).apply()
+
+            exchangeCount += 1
+            prefs.edit().putInt(PK_EXCHANGE_COUNT, exchangeCount).apply()
+            if (exchangeCount % 5 == 0) {
+                updateMemoryDigest(log)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun updateMemoryDigest(log: JSONArray) {
+        viewModelScope.launch {
+            try {
+                val recent = (kotlin.math.max(0, log.length() - 20) until log.length())
+                    .map { i ->
+                        val e = log.getJSONObject(i)
+                        "${e.optString("role")}: ${e.optString("text").take(500)}"
+                    }
+                    .joinToString("\n")
+                val prompt = "Current memory profile of the user:\n${_memoryDigest.value.ifBlank { "(empty)" }}\n\n" +
+                    "Recent conversation log:\n$recent\n\n" +
+                    "Update the memory profile: key facts, preferences, ongoing matters, and how the user likes to be treated. " +
+                    "Keep it under 300 words. Return ONLY the updated profile text."
+                val updated = MistralApi.chat(
+                    history = listOf(ChatMessagePayload(role = "user", text = prompt)),
+                    systemInstruction = "You maintain a concise long-term memory profile of a user for a personal AI assistant."
+                )
+                if (updated.isNotBlank()) {
+                    _memoryDigest.value = updated.trim()
+                    prefs.edit().putString(PK_MEMORY_DIGEST, updated.trim()).apply()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     private fun buildSystemInstruction(): String {
         val parts = mutableListOf<String>()
+        if (_memoryDigest.value.isNotBlank()) {
+            parts.add("Your long-term memory of this user (from past sessions):\n${_memoryDigest.value.trim()}")
+        }
         if (_personaName.value.isNotBlank()) {
             parts.add("Your name is ${_personaName.value.trim()}.")
         }
@@ -269,7 +335,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 val jsonEnd = reply.lastIndexOf('}')
                 if (jsonStart < 0 || jsonEnd <= jsonStart) throw Exception("Could not analyze document")
                 val json = JSONObject(reply.substring(jsonStart, jsonEnd + 1))
-                val newCase = DisputeCase(
+                var newCase = DisputeCase(
                     title = json.optString("title", "Dispute"),
                     issuer = json.optString("issuer", "Unknown issuer"),
                     amount = json.optString("amount", "N/A"),
@@ -277,6 +343,26 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     summary = json.optString("summary", ""),
                     letter = json.optString("letter", "")
                 )
+                try {
+                    val searchResults = MistralApi.webSearch("${newCase.issuer} ${newCase.title} consumer rights dispute regulation complaint")
+                    if (searchResults.isNotBlank()) {
+                        val refined = MistralApi.chat(
+                            history = listOf(
+                                ChatMessagePayload(
+                                    role = "user",
+                                    text = "Here is a draft dispute letter:\n\n${newCase.letter}\n\n" +
+                                        "Live web search results about the issuer and applicable consumer rights:\n$searchResults\n\n" +
+                                        "Rewrite the letter to cite the real, current regulations and complaint procedures found in the results " +
+                                        "where they apply. Only cite what the sources actually say. Return ONLY the updated letter."
+                                )
+                            ),
+                            systemInstruction = "You are a dispute resolution expert who grounds letters in real, verifiable regulations."
+                        )
+                        if (refined.isNotBlank()) newCase = newCase.copy(letter = refined.trim())
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
                 _disputes.value = listOf(newCase) + _disputes.value
                 persistDisputes()
                 onDone(true)
@@ -389,6 +475,10 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_USE_CLONED = "use_cloned_voice"
         private const val PK_CLONED_VOICE = "cloned_voice_base64"
         private const val PK_DISPUTES = "disputes_json"
+        private const val PK_LIVE_SEARCH = "use_live_search"
+        private const val PK_MEMORY_DIGEST = "memory_digest"
+        private const val PK_MEMORY_LOG = "memory_log"
+        private const val PK_EXCHANGE_COUNT = "exchange_count"
     }
 }
 
