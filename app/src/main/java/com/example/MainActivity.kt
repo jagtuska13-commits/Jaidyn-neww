@@ -314,6 +314,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
+    var showMusic by remember { mutableStateOf(false) }
     var splashGone by remember { mutableStateOf(false) }
     val hasAssistantReply = chatHistory.any { !it.isUser }
 
@@ -479,8 +480,13 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             JGSplash()
         }
 
-        Crossfade(targetState = showDisputes, label = "screen") { disputes ->
-        if (disputes) {
+        Crossfade(targetState = showDisputes || showMusic, label = "screen") { full ->
+        if (showMusic) {
+            MusicScreen(
+                viewModel = viewModel,
+                onBack = { showMusic = false }
+            )
+        } else if (full) {
             DisputesScreen(
                 viewModel = viewModel,
                 onBack = { showDisputes = false },
@@ -517,6 +523,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     )
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showMusic = true }) {
+                        Text("♪", fontSize = 22.sp, color = Color.White)
+                    }
                     IconButton(onClick = { showDisputes = true }) {
                         Text("⚖️", fontSize = 20.sp)
                     }
@@ -1292,6 +1301,179 @@ fun JGSplash() {
                     letterSpacing = 8.sp,
                     color = Color(0x99FFFFFF)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun MusicScreen(viewModel: ShowcaseViewModel, onBack: () -> Unit) {
+    val isComposing by viewModel.isComposing.collectAsState()
+    val composeStage by viewModel.composeStage.collectAsState()
+    val currentSong by viewModel.currentSong.collectAsState()
+    var description by remember { mutableStateOf("") }
+    var composeError by remember { mutableStateOf(false) }
+    var savedMsg by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Text("←", fontSize = 22.sp, color = Color.White)
+                }
+                Text(
+                    "MUSIC STUDIO",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 3.sp,
+                    style = TextStyle(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFFFF007F), Color(0xFFFFB703))
+                        )
+                    )
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Describe your song — style, mood, topic — and JaggedGem writes the lyrics, composes the music, and renders it as audio on your phone.",
+                color = Color(0x80FFFFFF),
+                fontSize = 13.sp
+            )
+
+            BasicTextField(
+                value = description,
+                onValueChange = { description = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 72.dp)
+                    .background(Color(0x1AFFFFFF), RoundedCornerShape(18.dp))
+                    .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                decorationBox = { inner ->
+                    Box {
+                        if (description.isEmpty()) {
+                            Text(
+                                "e.g. a chill lo-fi track about late nights in the city...",
+                                color = Color(0x60FFFFFF),
+                                fontSize = 14.sp
+                            )
+                        }
+                        inner()
+                    }
+                }
+            )
+
+            Button(
+                onClick = {
+                    composeError = false
+                    savedMsg = false
+                    viewModel.composeSong(description) { ok ->
+                        if (!ok) composeError = true
+                    }
+                },
+                enabled = !isComposing && description.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(Color(0x33FFFFFF)),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Text(
+                    if (isComposing) composeStage.ifBlank { "Composing..." } else "♪ Compose my song",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (composeError) {
+                Text("Composition failed. Try again with a shorter description.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
+            }
+
+            if (isComposing) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TypingIndicator()
+                }
+            }
+
+            currentSong?.let { song ->
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .background(Color(0x1AFFFFFF), RoundedCornerShape(20.dp))
+                                .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                                .padding(20.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(song.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text(song.style, color = Color(0xFFFFB703), fontSize = 11.sp)
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(
+                                    onClick = { viewModel.playSong(song.filePath) },
+                                    colors = ButtonDefaults.buttonColors(Color(0x3300FFCC)),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text("▶ Play", color = Color.White, fontSize = 13.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        savedMsg = viewModel.saveSongToDownloads(song)
+                                    },
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text("Save to Downloads", color = Color(0xFF00FFCC), fontSize = 13.sp)
+                                }
+                            }
+                            if (savedMsg) {
+                                Spacer(Modifier.height(6.dp))
+                                Text("Saved to Downloads ✓", color = Color(0xFF00FFCC), fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            Text("LYRICS", color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                song.lyrics,
+                                color = Color(0xB3FFFFFF),
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }

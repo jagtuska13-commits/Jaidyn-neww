@@ -11,6 +11,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.api.ChatMessagePayload
 import com.example.api.MistralApi
+import com.example.api.MusicSynth
+import com.example.api.SongSection
+import com.example.api.SongSpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +21,13 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+
+data class SongResult(
+    val title: String,
+    val lyrics: String,
+    val filePath: String,
+    val style: String
+)
 
 enum class DisputeStatus { DRAFTED, SENT, AWAITING, RESOLVED }
 
@@ -112,6 +122,15 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     val memoryDigest: StateFlow<String> = _memoryDigest.asStateFlow()
 
     private var exchangeCount = prefs.getInt(PK_EXCHANGE_COUNT, 0)
+
+    private val _isComposing = MutableStateFlow(false)
+    val isComposing: StateFlow<Boolean> = _isComposing.asStateFlow()
+
+    private val _currentSong = MutableStateFlow<SongResult?>(null)
+    val currentSong: StateFlow<SongResult?> = _currentSong.asStateFlow()
+
+    private val _composeStage = MutableStateFlow("")
+    val composeStage: StateFlow<String> = _composeStage.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
 
@@ -494,6 +513,107 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    fun composeSong(description: String, onDone: (Boolean) -> Unit) {
+        if (_isComposing.value || description.isBlank()) return
+        _isComposing.value = true
+        _composeStage.value = "Writing lyrics and composition..."
+        viewModelScope.launch {
+            try {
+                val prompt = "Write an original song based on: $description\n\n" +
+                    "Respond ONLY with valid JSON, no markdown: " +
+                    "{\"title\": string, \"lyrics\": string (full lyrics with [Verse]/[Chorus] tags), " +
+                    "\"bpm\": int 60-140, \"style\": short style description, " +
+                    "\"sections\": [{\"name\": string, \"bars\": int 2-8, " +
+                    "\"chords\": array of chord symbols like Am F C G, " +
+                    "\"melody\": array of melody tokens like A4:2 C5:1 E5:1 (note:beats, 8-16 tokens per section)}]}. " +
+                    "Use 4-6 sections (intro, verse, chorus, bridge, outro). " +
+                    "Melody notes must fit the section's chords."
+                val reply = MistralApi.chat(
+                    history = listOf(ChatMessagePayload(role = "user", text = prompt)),
+                    systemInstruction = "You are a professional songwriter and composer. Return only valid JSON."
+                )
+                val jsonStart = reply.indexOf('{')
+                val jsonEnd = reply.lastIndexOf('}')
+                if (jsonStart < 0 || jsonEnd <= jsonStart) throw Exception("Bad composition")
+                val json = JSONObject(reply.substring(jsonStart, jsonEnd + 1))
+                val sections = mutableListOf<SongSection>()
+                val arr = json.getJSONArray("sections")
+                for (i in 0 until arr.length()) {
+                    val s = arr.getJSONObject(i)
+                    sections.add(
+                        SongSection(
+                            name = s.optString("name", "section"),
+                            bars = s.optInt("bars", 4),
+                            chords = s.optJSONArray("chords")?.let { c ->
+                                (0 until c.length()).map { c.optString(it) }.filter { it.isNotBlank() }
+                            } ?: emptyList(),
+                            melody = s.optJSONArray("melody")?.let { m ->
+                                (0 until m.length()).map { m.optString(it) }.filter { it.isNotBlank() }
+                            } ?: emptyList()
+                        )
+                    )
+                }
+                if (sections.isEmpty()) throw Exception("No sections")
+                val spec = SongSpec(
+                    bpm = json.optInt("bpm", 90),
+                    style = json.optString("style", ""),
+                    sections = sections
+                )
+                _composeStage.value = "Rendering audio..."
+                val wavBytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    MusicSynth.render(spec)
+                }
+                val file = File(getApplication<Application>().filesDir, "song_${System.currentTimeMillis()}.wav")
+                FileOutputStream(file).use { it.write(wavBytes) }
+                _currentSong.value = SongResult(
+                    title = json.optString("title", "Untitled"),
+                    lyrics = json.optString("lyrics", ""),
+                    filePath = file.absolutePath,
+                    style = spec.style
+                )
+                onDone(true)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onDone(false)
+            } finally {
+                _isComposing.value = false
+                _composeStage.value = ""
+            }
+        }
+    }
+
+    fun playSong(path: String) {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(path)
+                prepare()
+                start()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun saveSongToDownloads(song: SongResult): Boolean {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "${song.title.replace(Regex("[^\\w -]"), "")}.wav")
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, "audio/wav")
+                }
+                val resolver = getApplication<Application>().contentResolver
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+                resolver.openOutputStream(uri)?.use { it.write(File(song.filePath).readBytes()) }
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
         }
     }
 
