@@ -1390,133 +1390,148 @@ fun StrataLoader() {
         ),
         label = "morph"
     )
+    val spinY by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(2700, easing = LinearEasing)),
+        label = "spinY"
+    )
     val orbit by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(6000, easing = LinearEasing)),
         label = "orbit"
     )
-    val shimmerX by transition.animateFloat(
-        initialValue = -1f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing)),
-        label = "shimmer"
+    val wordPhase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "wordPhase"
     )
 
-    val sPath = listOf(
-        70f to 28f,
-        65f to 18f, 35f to 18f, 35f to 34f,
-        35f to 48f, 65f to 52f, 65f to 66f,
-        65f to 82f, 35f to 82f, 30f to 72f
-    )
-    val circlePath = listOf(
-        50f to 15f,
-        70f to 15f, 85f to 30f, 85f to 50f,
-        85f to 70f, 70f to 85f, 50f to 85f,
-        30f to 85f, 15f to 70f, 15f to 50f
-    )
+    val status = when ((morph * 4f).toInt()) {
+        0 -> "Researching the law"
+        1 -> "Checking jurisdiction"
+        2 -> "Preparing your answer"
+        else -> "Verifying sources"
+    }
+    val words = status.split(" ")
 
     Row(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .clipToBounds()
-            .drawWithContent {
-                drawContent()
-                val w = size.width
-                drawRect(
-                    brush = Brush.linearGradient(
-                        colors = listOf(Color.Transparent, Color(0x4000E5C7), Color.Transparent),
-                        start = Offset(w * shimmerX, 0f),
-                        end = Offset(w * (shimmerX + 0.6f), size.height)
-                    )
-                )
-            }
-            .background(Color(0x14FFFFFF), RoundedCornerShape(28.dp))
-            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(28.dp))
-            .padding(horizontal = 18.dp, vertical = 10.dp),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Canvas(modifier = Modifier.size(40.dp)) {
-            val scale = size.width / 100f
-            val path = androidx.compose.ui.graphics.Path()
-            fun pt(i: Int): Offset {
-                val s = sPath[i]
-                val c = circlePath[i]
-                val spread = 0.5f
-                val delay = (i / 9f) * spread
-                val local = ((morph - delay) / (1f - spread)).coerceIn(0f, 1f)
-                val t = local * local * (3f - 2f * local)
-                return Offset(
-                    ((s.first + (c.first - s.first) * t) * scale),
-                    ((s.second + (c.second - s.second) * t) * scale)
+        Box(
+            modifier = Modifier.graphicsLayer {
+                rotationY = spinY
+                cameraDistance = 12f * density
+            }
+        ) {
+            Canvas(modifier = Modifier.size(34.dp)) {
+                val scale = size.width / 100f
+                val sPath = listOf(
+                    70f to 28f,
+                    65f to 18f, 35f to 18f, 35f to 34f,
+                    35f to 48f, 65f to 52f, 65f to 66f,
+                    65f to 82f, 35f to 82f, 30f to 72f
                 )
-            }
-            path.moveTo(pt(0).x, pt(0).y)
-            for (seg in 0 until 3) {
-                val a = pt(seg * 3 + 1)
-                val b = pt(seg * 3 + 2)
-                val c = pt(seg * 3 + 3)
-                path.cubicTo(a.x, a.y, b.x, b.y, c.x, c.y)
-            }
+                val circlePath = listOf(
+                    50f to 15f,
+                    70f to 15f, 85f to 30f, 85f to 50f,
+                    85f to 70f, 70f to 85f, 50f to 85f,
+                    30f to 85f, 15f to 70f, 15f to 50f
+                )
+                val path = androidx.compose.ui.graphics.Path()
+                fun pt(i: Int): Offset {
+                    val s = sPath[i]
+                    val c = circlePath[i]
+                    val spread = 0.5f
+                    val delay = (i / 9f) * spread
+                    val local = ((morph - delay) / (1f - spread)).coerceIn(0f, 1f)
+                    val t = local * local * (3f - 2f * local)
+                    return Offset(
+                        ((s.first + (c.first - s.first) * t) * scale),
+                        ((s.second + (c.second - s.second) * t) * scale)
+                    )
+                }
+                path.moveTo(pt(0).x, pt(0).y)
+                for (seg in 0 until 3) {
+                    val a = pt(seg * 3 + 1)
+                    val b = pt(seg * 3 + 2)
+                    val c = pt(seg * 3 + 3)
+                    path.cubicTo(a.x, a.y, b.x, b.y, c.x, c.y)
+                }
 
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0x3300E5C7), Color.Transparent),
-                    center = Offset(size.width / 2, size.height / 2),
-                    radius = size.width
-                ),
-                radius = size.width * 0.9f,
-                center = Offset(size.width / 2, size.height / 2)
-            )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0x2600E5C7), Color.Transparent),
+                        center = Offset(size.width / 2, size.height / 2),
+                        radius = size.width
+                    ),
+                    radius = size.width * 0.9f,
+                    center = Offset(size.width / 2, size.height / 2)
+                )
 
-            drawCircle(
-                color = Color(0x2906B6D4),
-                radius = size.width * 0.48f,
-                center = Offset(size.width / 2, size.height / 2),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 1.2.dp.toPx(),
-                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                        floatArrayOf(3.dp.toPx(), 5.dp.toPx(), 9.dp.toPx(), 5.dp.toPx()),
-                        phase = orbit
+                drawArc(
+                    color = Color(0x4F06B6D4),
+                    startAngle = orbit,
+                    sweepAngle = 140f,
+                    useCenter = false,
+                    topLeft = Offset(size.width * 0.04f, size.height * 0.04f),
+                    size = androidx.compose.ui.geometry.Size(size.width * 0.92f, size.height * 0.92f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 1.2.dp.toPx(),
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
                     )
                 )
-            )
 
-            drawPath(
-                path = path,
-                brush = Brush.sweepGradient(
-                    colors = listOf(Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFF59E0B), Color(0xFF06B6D4)),
-                    center = Offset(size.width / 2, size.height / 2)
-                ),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 9f,
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round
-                ),
-                alpha = 0.25f
-            )
-            drawPath(
-                path = path,
-                brush = Brush.sweepGradient(
-                    colors = listOf(Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFF59E0B), Color(0xFF06B6D4)),
-                    center = Offset(size.width / 2, size.height / 2)
-                ),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 2.6.dp.toPx(),
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                drawPath(
+                    path = path,
+                    brush = Brush.sweepGradient(
+                        colors = listOf(Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFF59E0B), Color(0xFF06B6D4)),
+                        center = Offset(size.width / 2, size.height / 2)
+                    ),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 9f,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    ),
+                    alpha = 0.25f
                 )
-            )
+                drawPath(
+                    path = path,
+                    brush = Brush.sweepGradient(
+                        colors = listOf(Color(0xFF06B6D4), Color(0xFF8B5CF6), Color(0xFFF59E0B), Color(0xFF06B6D4)),
+                        center = Offset(size.width / 2, size.height / 2)
+                    ),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 2.6.dp.toPx(),
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                )
+            }
         }
-        Text(
-            when ((morph * 4f).toInt()) {
-                0 -> "Researching the law"
-                1 -> "Checking jurisdiction"
-                2 -> "Preparing your answer"
-                else -> "Verifying sources"
-            },
-            color = Color(0x99FFFFFF),
-            fontSize = 12.sp
-        )
+        key(status) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val total = 1f + (words.size - 1) * 0.12f
+                words.forEachIndexed { i, word ->
+                    val a = ((wordPhase * total - i * 0.12f).coerceIn(0f, 1f))
+                    val eased = a * a * (3f - 2f * a)
+                    Text(
+                        word,
+                        color = Color(0x99FFFFFF),
+                        fontSize = 12.sp,
+                        modifier = Modifier.graphicsLayer { alpha = eased }
+                    )
+                }
+            }
+        }
     }
 }
 
