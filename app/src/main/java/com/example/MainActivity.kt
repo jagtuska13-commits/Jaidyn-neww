@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Flag
@@ -83,17 +84,22 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.api.EmailInbox
 import com.example.api.VoiceRecorder
 import com.example.ui.features.DisputeCase
 import com.example.ui.features.DisputeStatus
 import com.example.ui.features.ShowcaseViewModel
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -346,6 +352,93 @@ fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EmailPickerSheet(
+    emailAddress: String,
+    emailPassword: String,
+    emailHost: String,
+    onDismiss: () -> Unit,
+    onPick: (EmailInbox.EmailThread) -> Unit
+) {
+    var threads by remember { mutableStateOf<List<EmailInbox.EmailThread>?>(null) }
+    val credentialsReady = emailAddress.isNotBlank() && emailPassword.isNotBlank()
+    LaunchedEffect(Unit) {
+        if (credentialsReady) {
+            threads = withContext(Dispatchers.IO) {
+                EmailInbox.load(emailAddress, emailPassword, emailHost)
+            }
+        }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F0B1A),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "RECENT EMAILS",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 2.sp,
+                style = TextStyle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                    )
+                )
+            )
+            if (!credentialsReady) {
+                Text(
+                    "Add your email address and IMAP password in Settings (the gear icon, top right) first.\n\nFor Gmail: turn on 2-step verification, then create an App Password at myaccount.google.com/apppasswords and paste it here in Settings.",
+                    color = Color(0xB3FFFFFF),
+                    fontSize = 13.sp
+                )
+            } else {
+                val list = threads
+                if (list == null) {
+                    Text("Loading inbox...", color = Color(0xB3FFFFFF), fontSize = 14.sp)
+                } else if (list.isEmpty()) {
+                    Text("Couldn't load the inbox. Check your address, the IMAP password (app password, not your normal one), and the host in Settings.", color = Color(0xB3FFFFFF), fontSize = 13.sp)
+                } else {
+                    list.take(25).forEach { t ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onPick(t) }
+                                .background(Color(0x14FFFFFF))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(t.from, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(formatEmailDate(t.sentDate), color = Color(0x80FFFFFF), fontSize = 10.sp)
+                            }
+                            Text(t.subject, color = Color(0xFF80DEFF), fontSize = 12.sp, maxLines = 1)
+                            Text(t.snippet, color = Color(0xB3FFFFFF), fontSize = 11.sp, maxLines = 2)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun formatEmailDate(ts: Long): String {
+    if (ts == 0L) return ""
+    return java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))
+}
+
 @Composable
 fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
@@ -363,6 +456,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val speakReplies by viewModel.speakReplies.collectAsState()
     val useClonedVoice by viewModel.useClonedVoice.collectAsState()
     val useLiveSearch by viewModel.useLiveSearch.collectAsState()
+    val emailAddress by viewModel.emailAddress.collectAsState()
+    val emailPassword by viewModel.emailPassword.collectAsState()
+    val emailHost by viewModel.emailHost.collectAsState()
     val clonedVoiceBase64 by viewModel.clonedVoiceBase64.collectAsState()
     val isSavingVoice by viewModel.isSavingVoice.collectAsState()
 
@@ -378,6 +474,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val pendingDocs = remember { mutableStateListOf<Pair<String, String>>() }
     var docError by remember { mutableStateOf(false) }
     var showSmsPicker by remember { mutableStateOf(false) }
+    var showEmailPicker by remember { mutableStateOf(false) }
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
@@ -829,6 +926,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                         smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
                                     }
                                 }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Sms, contentDescription = "Attach SMS thread", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                                IconButton(onClick = { showEmailPicker = true }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Email, contentDescription = "Attach email", tint = Color.White, modifier = Modifier.size(20.dp)) }
                                 PulsingMicButton(
                                     isRecording = isRecording,
                                     isTranscribing = isTranscribing,
@@ -885,6 +983,19 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 onPick = { thread ->
                     pendingDocs.add("SMS thread — ${thread.address}" to thread.text)
                     showSmsPicker = false
+                }
+            )
+        }
+
+        if (showEmailPicker) {
+            EmailPickerSheet(
+                emailAddress = emailAddress,
+                emailPassword = emailPassword,
+                emailHost = emailHost,
+                onDismiss = { showEmailPicker = false },
+                onPick = { email ->
+                    pendingDocs.add("Email — ${email.subject}" to email.text)
+                    showEmailPicker = false
                 }
             )
         }
@@ -950,6 +1061,32 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         onValueChange = { viewModel.updateJurisdiction(it) },
                         placeholder = "e.g. New South Wales, Australia / California, USA",
                         minHeight = 52.dp
+                    )
+
+                    Text("EMAIL INTEGRATION", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    DrawerTextField(
+                        label = "EMAIL ADDRESS",
+                        value = emailAddress,
+                        onValueChange = { viewModel.updateEmailAddress(it) },
+                        placeholder = "you@gmail.com"
+                    )
+                    DrawerTextField(
+                        label = "IMAP PASSWORD (APP PASSWORD)",
+                        value = emailPassword,
+                        onValueChange = { viewModel.updateEmailPassword(it) },
+                        placeholder = "Gmail: use an App Password, not your normal password",
+                        mask = true
+                    )
+                    DrawerTextField(
+                        label = "IMAP HOST (OPTIONAL)",
+                        value = emailHost,
+                        onValueChange = { viewModel.updateEmailHost(it) },
+                        placeholder = "Auto: Gmail, Outlook, Yahoo, iCloud"
+                    )
+                    Text(
+                        "Gmail: turn on 2-step verification, then create an App Password at myaccount.google.com/apppasswords. Outlook/other: use your IMAP/app password.",
+                        color = Color(0x80FFFFFF),
+                        fontSize = 11.sp
                     )
 
                     Text("LEGAL DETAIL LEVEL", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1104,7 +1241,8 @@ fun DrawerTextField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
-    minHeight: Dp = 52.dp
+    minHeight: Dp = 52.dp,
+    mask: Boolean = false
 ) {
     Column {
         Text(label, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1117,6 +1255,7 @@ fun DrawerTextField(
                 .heightIn(min = minHeight)
                 .background(Color(0x1AFFFFFF), RoundedCornerShape(14.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
+            visualTransformation = if (mask) PasswordVisualTransformation() else VisualTransformation.None,
             textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
             decorationBox = { inner ->
                 Box {

@@ -108,6 +108,15 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     private val _useLiveSearch = MutableStateFlow(prefs.getBoolean(PK_LIVE_SEARCH, true))
     val useLiveSearch: StateFlow<Boolean> = _useLiveSearch.asStateFlow()
 
+    private val _emailAddress = MutableStateFlow(prefs.getString(PK_EMAIL_ADDRESS, "") ?: "")
+    val emailAddress: StateFlow<String> = _emailAddress.asStateFlow()
+
+    private val _emailPassword = MutableStateFlow(prefs.getString(PK_EMAIL_PASSWORD, "") ?: "")
+    val emailPassword: StateFlow<String> = _emailPassword.asStateFlow()
+
+    private val _emailHost = MutableStateFlow(prefs.getString(PK_EMAIL_HOST, "") ?: "")
+    val emailHost: StateFlow<String> = _emailHost.asStateFlow()
+
     private val _jurisdiction = MutableStateFlow(prefs.getString(PK_JURISDICTION, "") ?: "")
     val jurisdiction: StateFlow<String> = _jurisdiction.asStateFlow()
 
@@ -214,6 +223,21 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     fun setUseClonedVoice(enabled: Boolean) {
         _useClonedVoice.value = enabled
         prefs.edit().putBoolean(PK_USE_CLONED, enabled).apply()
+    }
+
+    fun updateEmailAddress(value: String) {
+        _emailAddress.value = value
+        prefs.edit().putString(PK_EMAIL_ADDRESS, value).apply()
+    }
+
+    fun updateEmailPassword(value: String) {
+        _emailPassword.value = value
+        prefs.edit().putString(PK_EMAIL_PASSWORD, value).apply()
+    }
+
+    fun updateEmailHost(value: String) {
+        _emailHost.value = value
+        prefs.edit().putString(PK_EMAIL_HOST, value).apply()
     }
 
     fun setUseLiveSearch(enabled: Boolean) {
@@ -693,6 +717,9 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_JURISDICTION = "jurisdiction"
         private const val PK_LEGAL_DETAIL = "legal_detail"
         private const val PK_CITE_SOURCES = "cite_sources"
+        private const val PK_EMAIL_ADDRESS = "email_address"
+        private const val PK_EMAIL_PASSWORD = "email_password"
+        private const val PK_EMAIL_HOST = "email_host"
         private const val PK_REPORTED = "reported_answers"
     }
 }
