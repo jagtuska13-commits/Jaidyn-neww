@@ -77,12 +77,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.TextUnit
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -192,10 +192,14 @@ fun WordFadeText(
         for (i in start until words.size) {
             launch {
                 delay((i - start) * 45L)
-                val anim = Animatable(0f)
-                anim.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) { value ->
-                    alphas[i] = value
+                var t = 0L
+                while (t < 320L) {
+                    val p = (t / 320f).coerceIn(0f, 1f)
+                    alphas[i] = p * p * (3f - 2f * p)
+                    delay(16L)
+                    t += 16L
                 }
+                alphas[i] = 1f
             }
         }
     }
@@ -205,10 +209,10 @@ fun WordFadeText(
             if (i > 0) append(" ")
             withStyle(
                 SpanStyle(
-                    color = color,
+                    color = color.copy(alpha = alphas.getOrElse(i) { 1f }),
                     fontSize = fontSize,
                     fontWeight = fontWeight
-                ).copy(alpha = alphas.getOrElse(i) { 1f })
+                )
             ) {
                 append(w)
             }
