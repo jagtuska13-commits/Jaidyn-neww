@@ -1,7 +1,8 @@
 name: Diagnose backend
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   diagnose:
