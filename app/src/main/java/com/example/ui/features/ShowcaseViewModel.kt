@@ -492,6 +492,15 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun stopSpeaking() {
+        try {
+            mediaPlayer?.stop()
+        } catch (e: Exception) {
+        }
+        mediaPlayer?.release()
+        mediaPlayer = null
+    }
+
     fun playAudioFromBase64(base64Str: String, cacheDir: File) {
         try {
             val audioData = Base64.decode(base64Str, Base64.DEFAULT)

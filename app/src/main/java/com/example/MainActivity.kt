@@ -45,6 +45,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Balance
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sms
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -206,6 +217,113 @@ fun WordFadeText(
     Text(annotated, color = color, fontSize = fontSize, fontWeight = fontWeight)
 }
 
+data class SmsThread(
+    val address: String,
+    val snippet: String,
+    val count: Int,
+    val latestDate: Long,
+    val text: String
+)
+
+fun loadSmsThreads(context: Context, maxThreads: Int = 30, perThread: Int = 15): List<SmsThread> {
+    val map = LinkedHashMap<String, MutableList<Pair<Long, String>>>()
+    try {
+        val cursor = context.contentResolver.query(
+            android.net.Uri.parse("content://sms/inbox"),
+            arrayOf("address", "body", "date"),
+            null,
+            null,
+            "date DESC"
+        ) ?: return emptyList()
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                val addr = c.getString(0) ?: continue
+                val body = c.getString(1) ?: ""
+                val date = c.getLong(2)
+                map.getOrPut(addr) { mutableListOf() }.add(date to body)
+                if (map.size > maxThreads * 3) break
+            }
+        }
+    } catch (e: Exception) {
+        return emptyList()
+    }
+    val fmt = java.text.SimpleDateFormat("d MMM yyyy HH:mm", java.util.Locale.getDefault())
+    return map.entries.map { (addr, msgs) ->
+        val recent = msgs.take(perThread).sortedBy { it.first }
+        SmsThread(
+            address = addr,
+            snippet = recent.lastOrNull()?.second?.take(60) ?: "",
+            count = msgs.size,
+            latestDate = msgs.firstOrNull()?.first ?: 0L,
+            text = "SMS thread with $addr (${recent.size} recent message(s), oldest first, most recent last):\n\n" +
+                recent.joinToString("\n") { "[${fmt.format(java.util.Date(it.first))}] ${it.second}" }
+        )
+    }.sortedByDescending { it.latestDate }.take(maxThreads)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
+    var threads by remember { mutableStateOf<List<SmsThread>?>(null) }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        threads = loadSmsThreads(context)
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F0B1A),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "RECENT SMS THREADS",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 2.sp,
+                style = TextStyle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                    )
+                )
+            )
+            val list = threads
+            if (list == null) {
+                Text("Loading messages...", color = Color(0xB3FFFFFF), fontSize = 14.sp)
+            } else if (list.isEmpty()) {
+                Text("No messages found. Make sure SMS permission is granted and there are SMS conversations on this phone.", color = Color(0xB3FFFFFF), fontSize = 14.sp)
+            } else {
+                list.take(25).forEach { t ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onPick(t) }
+                            .background(Color(0x14FFFFFF))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(t.address, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${t.count} msg", color = Color(0x80FFFFFF), fontSize = 11.sp)
+                        }
+                        Text(t.snippet, color = Color(0xB3FFFFFF), fontSize = 12.sp, maxLines = 2)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
@@ -228,18 +346,16 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
 
     var inputText by remember { mutableStateOf("") }
     var showSettingsPanel by remember { mutableStateOf(false) }
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    var selectedImageBase64 by remember { mutableStateOf<String?>(null) }
-    var selectedImageMimeType by remember { mutableStateOf<String?>(null) }
+    val pendingImages = remember { mutableStateListOf<Pair<String, String>>() }
     var isRecording by remember { mutableStateOf(false) }
     var voiceRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
     var isCloningRecording by remember { mutableStateOf(false) }
     var cloneRecorder by remember { mutableStateOf<VoiceRecorder?>(null) }
     var micAmplitude by remember { mutableStateOf(0f) }
     var playingAudioId by remember { mutableStateOf<String?>(null) }
-    var selectedDocName by remember { mutableStateOf<String?>(null) }
-    var selectedDocText by remember { mutableStateOf<String?>(null) }
+    val pendingDocs = remember { mutableStateListOf<Pair<String, String>>() }
     var docError by remember { mutableStateOf(false) }
+    var showSmsPicker by remember { mutableStateOf(false) }
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
@@ -252,10 +368,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
             if (uri != null) {
-                selectedImageUri = uri
-                val base64Data = getResizedBase64(context, uri)
-                selectedImageBase64 = base64Data?.first
-                selectedImageMimeType = base64Data?.second
+                getResizedBase64(context, uri)?.let { pendingImages.add(it.first to it.second) }
             }
         }
     )
@@ -298,6 +411,14 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            showSmsPicker = true
+        }
+    }
+
     val clonePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -318,8 +439,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
                     viewModel.processDocument(b64, "application/pdf", name) { text ->
                         if (text != null) {
-                            selectedDocName = name
-                            selectedDocText = text
+                            pendingDocs.add(name to text)
                         } else {
                             docError = true
                         }
@@ -417,48 +537,19 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 onDismissError = { disputeError = false }
             )
         } else {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "STRATAGEM",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 3.sp,
-                    style = TextStyle(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
-                        )
-                    )
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showDisputes = true }) {
-                        Text("⚖️", fontSize = 20.sp)
-                    }
-                    IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
-                        Text("⚙️", fontSize = 20.sp)
-                    }
-                }
-            }
-
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = 8.dp,
-                    bottom = 8.dp
+                    top = 116.dp,
+                    bottom = 150.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -482,7 +573,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                         .padding(horizontal = 10.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("📄", fontSize = 12.sp)
+                                    Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
                                     Spacer(Modifier.width(6.dp))
                                     Text(message.documentName!!, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                 }
@@ -513,34 +604,44 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(22.dp)
                                 ) {
-                                    Text(
-                                        "🔊",
-                                        fontSize = 15.sp,
-                                        color = Color(0xB3FFFFFF),
-                                        modifier = Modifier.clickable {
-                                            playingAudioId = message.id
-                                            viewModel.speakMessage(message.text, message.audioBase64, context.cacheDir)
-                                        }
-                                    )
-                                    Text(
-                                        "⧉",
-                                        fontSize = 15.sp,
-                                        color = Color(0xB3FFFFFF),
-                                        modifier = Modifier.clickable {
+                                    if (playingAudioId == message.id) {
+                                        Icon(
+                                            Icons.Default.Stop,
+                                            contentDescription = "Stop audio",
+                                            tint = Color(0xFFFF4D6D),
+                                            modifier = Modifier.size(20.dp).clickable {
+                                                viewModel.stopSpeaking()
+                                                playingAudioId = null
+                                            }
+                                        )
+                                        AudioBars()
+                                    } else {
+                                        Icon(
+                                            Icons.Default.VolumeUp,
+                                            contentDescription = "Read aloud",
+                                            tint = Color(0xB3FFFFFF),
+                                            modifier = Modifier.size(18.dp).clickable {
+                                                playingAudioId = message.id
+                                                viewModel.speakMessage(message.text, message.audioBase64, context.cacheDir)
+                                            }
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Default.ContentCopy,
+                                        contentDescription = "Copy",
+                                        tint = Color(0xB3FFFFFF),
+                                        modifier = Modifier.size(16.dp).clickable {
                                             clipboard.setText(AnnotatedString(message.text))
                                         }
                                     )
-                                    Text(
-                                        "🚩",
-                                        fontSize = 13.sp,
-                                        color = if (isReported) Color(0xFFFF4D6D) else Color(0x80FFFFFF),
-                                        modifier = Modifier.clickable {
+                                    Icon(
+                                        if (isReported) Icons.Default.Flag else Icons.Outlined.Flag,
+                                        contentDescription = "Report answer",
+                                        tint = if (isReported) Color(0xFFFF4D6D) else Color(0x80FFFFFF),
+                                        modifier = Modifier.size(16.dp).clickable {
                                             viewModel.reportAnswer(message.id, message.text)
                                         }
                                     )
-                                    if (playingAudioId == message.id) {
-                                        AudioBars()
-                                    }
                                 }
                             }
                         }
@@ -548,122 +649,222 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 }
             }
 
-            if (selectedDocName != null || isReadingDocState || docError) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .background(Brush.verticalGradient(listOf(Color(0xFF07030E), Color(0x0007030E))))
+            ) {}
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(86.dp)
+                    .background(Brush.verticalGradient(listOf(Color(0x0007030E), Color(0xFF07030E))))
+            ) {}
+
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "STRATAGEM",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 3.sp,
+                    style = TextStyle(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                        )
+                    )
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showDisputes = true }) {
+                        Icon(Icons.Default.Balance, contentDescription = "Disputes", tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
+                    IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                if (pendingImages.isNotEmpty() || pendingDocs.isNotEmpty() || docError || isReadingDocState) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (docError) {
+                            Text("Couldn't read that document. Try a smaller PDF.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { docError = false })
+                        }
+                        pendingImages.forEachIndexed { i, (img, _) ->
+                            Box(modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x26FFFFFF))) {
+                                val bitmap = remember(img) {
+                                    val bytes = Base64.decode(img, Base64.DEFAULT)
+                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                }
+                                bitmap?.let { Image(it, "Attached image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove image",
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(3.dp)
+                                        .size(16.dp)
+                                        .background(Color(0x99000000), CircleShape)
+                                        .clip(CircleShape)
+                                        .clickable { pendingImages.removeAt(i) }
+                                )
+                            }
+                        }
+                        pendingDocs.forEachIndexed { i, (docName, _) ->
+                            Row(
+                                modifier = Modifier
+                                    .background(Color(0x26FFFFFF), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(docName, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Default.Close, contentDescription = "Remove document", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { pendingDocs.removeAt(i) })
+                            }
+                        }
+                        if (isReadingDocState) {
+                            Row(
+                                modifier = Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Reading document...", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .imePadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (docError) {
-                        Text("Couldn't read that document. Try a smaller PDF.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
-                    } else {
-                        Text(
-                            if (isReadingDocState) "📄 Reading document..." else "📄 $selectedDocName",
-                            color = Color(0xFF80DEFF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        if (!isReadingDocState) {
-                            Text("✕", color = Color(0x80FFFFFF), fontSize = 12.sp, modifier = Modifier.clickable {
-                                selectedDocName = null
-                                selectedDocText = null
-                            })
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BasicTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(60.dp)
-                        .background(Color(0x0F0A0E1A), RoundedCornerShape(30.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.10f),
-                                    Color.White.copy(alpha = 0.03f)
-                                )
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(60.dp)
+                            .background(Color(0x0F0A0E1A), RoundedCornerShape(30.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.10f),
+                                        Color.White.copy(alpha = 0.03f)
+                                    )
+                                ),
+                                RoundedCornerShape(30.dp)
+                            )
+                            .border(
+                                1.dp,
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.5f),
+                                        Color(0xFF00E5C7).copy(alpha = 0.25f),
+                                        Color.White.copy(alpha = 0.06f)
+                                    )
+                                ),
+                                RoundedCornerShape(30.dp)
                             ),
-                            RoundedCornerShape(30.dp)
-                        )
-                        .border(
-                            1.dp,
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.5f),
-                                    Color(0xFF00E5C7).copy(alpha = 0.25f),
-                                    Color.White.copy(alpha = 0.06f)
-                                )
-                            ),
-                            RoundedCornerShape(30.dp)
-                        ),
-                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                    decorationBox = { innerTextField ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                            IconButton(onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.size(38.dp)) { Text("+", color = Color.White, fontSize = 20.sp) }
-                            IconButton(onClick = { docPickerLauncher.launch("application/pdf") }, modifier = Modifier.size(38.dp)) { Text("📄", color = Color.White, fontSize = 15.sp) }
-                            PulsingMicButton(
-                                isRecording = isRecording,
-                                isTranscribing = isTranscribing,
-                                amplitude = micAmplitude,
-                                onToggle = {
-                                    if (isRecording) {
-                                        stopRecording()
+                        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                        decorationBox = { innerTextField ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                IconButton(onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Add, contentDescription = "Attach image", tint = Color.White, modifier = Modifier.size(22.dp)) }
+                                IconButton(onClick = { docPickerLauncher.launch("application/pdf") }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Description, contentDescription = "Attach document", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                                IconButton(onClick = {
+                                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                                    if (granted) {
+                                        showSmsPicker = true
                                     } else {
-                                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                        if (granted) {
-                                            startRecording()
+                                        smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
+                                    }
+                                }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Sms, contentDescription = "Attach SMS thread", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                                PulsingMicButton(
+                                    isRecording = isRecording,
+                                    isTranscribing = isTranscribing,
+                                    amplitude = micAmplitude,
+                                    onToggle = {
+                                        if (isRecording) {
+                                            stopRecording()
                                         } else {
-                                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                            if (granted) {
+                                                startRecording()
+                                            } else {
+                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
                                         }
                                     }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Box(modifier = Modifier.weight(1f)) {
+                                    if (inputText.isEmpty()) Text("Message STRATAGEM...", color = Color(0x80FFFFFF), fontSize = 15.sp)
+                                    innerTextField()
                                 }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Box(modifier = Modifier.weight(1f)) {
-                                if (inputText.isEmpty()) Text("Message STRATAGEM...", color = Color(0x80FFFFFF), fontSize = 15.sp)
-                                innerTextField()
+                                AnimatedSendButton(
+                                    enabled = inputText.isNotBlank() || pendingImages.isNotEmpty() || pendingDocs.isNotEmpty(),
+                                    onClick = {
+                                        splashGone = true
+                                        pendingImages.forEach { (img, mime) ->
+                                            viewModel.sendMessage("", context.cacheDir, img, mime)
+                                        }
+                                        pendingDocs.forEach { (docName, docText) ->
+                                            viewModel.sendMessage("", context.cacheDir, null, null, docName, docText)
+                                        }
+                                        if (inputText.isNotBlank()) {
+                                            viewModel.sendMessage(inputText, context.cacheDir)
+                                        }
+                                        inputText = ""
+                                        pendingImages.clear()
+                                        pendingDocs.clear()
+                                        docError = false
+                                    }
+                                )
                             }
-                            AnimatedSendButton(
-                                enabled = inputText.isNotBlank() || selectedImageBase64 != null || selectedDocText != null,
-                                onClick = {
-                                    splashGone = true
-                                    viewModel.sendMessage(
-                                        inputText,
-                                        context.cacheDir,
-                                        selectedImageBase64,
-                                        selectedImageMimeType,
-                                        selectedDocName,
-                                        selectedDocText
-                                    )
-                                    inputText = ""
-                                    selectedImageUri = null
-                                    selectedImageBase64 = null
-                                    selectedImageMimeType = null
-                                    selectedDocName = null
-                                    selectedDocText = null
-                                }
-                            )
                         }
-                    }
-                )
+                    )
+                }
             }
         }
         }
+        }
+
+        if (showSmsPicker) {
+            SmsPickerSheet(
+                onDismiss = { showSmsPicker = false },
+                onPick = { thread ->
+                    pendingDocs.add("SMS thread — ${thread.address}" to thread.text)
+                    showSmsPicker = false
+                }
+            )
         }
 
         if (showSettingsPanel) {
@@ -1079,7 +1280,7 @@ fun DisputesScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("⚖️", fontSize = 48.sp)
+                Icon(Icons.Default.Balance, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
                 Spacer(Modifier.height(16.dp))
                 Text(
                     "Snap a bill, fine, or rejection letter\nand Stratagem fights it for you.",
