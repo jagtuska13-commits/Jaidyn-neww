@@ -50,6 +50,8 @@ import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sms
@@ -183,20 +185,54 @@ fun WordFadeText(
     fontSize: TextUnit = 15.sp,
     fontWeight: FontWeight? = null
 ) {
-    var alpha by remember { mutableStateOf(0f) }
-    LaunchedEffect(Unit) {
-        var t = 0L
-        while (t < 300L) {
-            val p = (t / 300f).coerceIn(0f, 1f)
-            alpha = p * p * (3f - 2f * p)
-            delay(16L)
-            t += 16L
+    val words = remember(text) { if (text.isBlank()) emptyList() else text.split(" ") }
+    val alphas = remember { mutableStateListOf<Float>() }
+
+    LaunchedEffect(words.size) {
+        val start = alphas.size
+        while (alphas.size < words.size) alphas.add(0f)
+        suspend fun fadeWord(i: Int) {
+            var t = 0L
+            while (t < 180L) {
+                val p = (t / 180f).coerceIn(0f, 1f)
+                alphas[i] = p * p * (3f - 2f * p)
+                delay(16L)
+                t += 16L
+            }
+            alphas[i] = 1f
         }
-        alpha = 1f
+        if (start == 0) {
+            for (i in 0 until words.size) {
+                fadeWord(i)
+                delay(70L)
+            }
+        } else {
+            for (i in start until words.size) {
+                launch {
+                    fadeWord(i)
+                }
+                delay(30L)
+            }
+        }
+    }
+
+    val annotated = buildAnnotatedString {
+        words.forEachIndexed { i, w ->
+            if (i > 0) append(" ")
+            withStyle(
+                SpanStyle(
+                    color = color.copy(alpha = alphas.getOrElse(i) { 0f }),
+                    fontSize = fontSize,
+                    fontWeight = fontWeight
+                )
+            ) {
+                append(w)
+            }
+        }
     }
     Text(
-        text,
-        color = color.copy(alpha = alpha),
+        annotated,
+        color = color,
         fontSize = fontSize,
         fontWeight = fontWeight,
         lineHeight = 22.sp
@@ -1148,14 +1184,21 @@ fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, amplitude: F
                 }
             }
         } else {
-            Text(
-                when {
-                    isTranscribing -> "⏳"
-                    else -> "🎙️"
-                },
-                fontSize = 18.sp,
-                color = Color.White
-            )
+            if (isTranscribing) {
+                Icon(
+                    Icons.Default.Timer,
+                    contentDescription = "Transcribing",
+                    tint = Color(0xFF80DEFF),
+                    modifier = Modifier.size(20.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Default.Mic,
+                    contentDescription = "Hold to talk",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
     }
 }
