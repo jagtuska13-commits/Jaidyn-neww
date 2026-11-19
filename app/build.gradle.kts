@@ -22,7 +22,7 @@ android {
             if (envFile.exists()) envFile.inputStream().use { load(it) }
         }
         buildConfigField("String", "MISTRAL_API_KEY", "\"${envProps.getProperty("MISTRAL_API_KEY", "")}\"")
-        buildConfigField("String", "CHAT_MODEL", "\"${envProps.getProperty("CHAT_MODEL", "mistral-small-latest")}\"")
+        buildConfigField("String", "CHAT_MODEL", "\"${envProps.getProperty("CHAT_MODEL", "mistral-large-latest")}\"")
         buildConfigField("String", "TTS_VOICE", "\"${envProps.getProperty("TTS_VOICE", "gb_jane_neutral")}\"")
     }
 
