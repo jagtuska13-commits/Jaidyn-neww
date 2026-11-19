@@ -17,52 +17,58 @@ jobs:
           import json, time, urllib.request, os
           key = os.environ["MISTRAL_API_KEY"]
           model = os.environ["CHAT_MODEL"].strip() or "mistral-large-latest"
-          print("Model:", model)
-          def probe(label, messages, stream):
-              body = {"model": model, "messages": messages, "stream": stream}
-              req = urllib.request.Request(
-                  "https://api.mistral.ai/v1/chat/completions",
+          doc_like = "[Attached document: agreement.pdf]\n" + ("The tenant agrees to pay rent of $450 per week, due each Friday. Clause 14: the landlord may end the agreement with 30 days notice. " * 60) + "\n\nThe user shared this with no message - summarize the key facts."
+          def blocks(content):
+              if isinstance(content, str): return [("text", content)]
+              out = []
+              items = content if isinstance(content, list) else [content]
+              for it in items:
+                  if isinstance(it, dict):
+                      t = it.get("type")
+                      if t == "thinking":
+                          for sub in it.get("thinking", []) if isinstance(it.get("thinking"), list) else []:
+                              if isinstance(sub, dict) and sub.get("text"): out.append(("thinking", sub["text"]))
+                      elif t == "text": out.append(("text", it.get("text","")))
+              return out
+          def stream(label, extra):
+              body = {"model": model, "messages": [{"role":"user","content":doc_like}], "stream": True}
+              body.update(extra)
+              req = urllib.request.Request("https://api.mistral.ai/v1/chat/completions",
                   data=json.dumps(body).encode(),
-                  headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "text/event-stream"},
-                  method="POST")
-              t0 = time.time()
+                  headers={"Authorization": "Bearer "+key, "Content-Type": "application/json", "Accept": "text/event-stream"})
+              t0 = time.time(); first_text = None; thinking_chars = 0; text_chars = 0; kinds = set()
               try:
-                  with urllib.request.urlopen(req, timeout=300) as r:
-                      status = r.status
-                      print(f"[{label}] HTTP {status}")
-                      total = ""
-                      first_chunk_at = None
-                      if stream:
-                          for raw in r:
-                              line = raw.decode("utf-8", "replace").strip()
-                              if not line.startswith("data:"): continue
-                              data = line[5:].strip()
-                              if data == "[DONE]": break
-                              try:
-                                  chunk = json.loads(data)
-                              except Exception:
-                                  continue
-                              if first_chunk_at is None:
-                                  first_chunk_at = time.time() - t0
-                              ch = chunk.get("choices", [{}])[0]
-                              d = ch.get("delta") or {}
-                              total += d.get("content") or ""
-                          print(f"[{label}] first chunk after {first_chunk_at if first_chunk_at is None else round(first_chunk_at,1)}s")
-                      else:
-                          js = json.loads(r.read().decode())
-                          total = js["choices"][0]["message"].get("content") or ""
-                      print(f"[{label}] total {round(time.time()-t0,1)}s, reply length {len(total)}")
-                      print(f"[{label}] reply head:", repr(total[:200]))
+                  with urllib.request.urlopen(req, timeout=240) as r:
+                      print(f"[{label}] HTTP {r.status}")
+                      for raw in r:
+                          line = raw.decode("utf-8","replace").strip()
+                          if not line.startswith("data:"): continue
+                          data = line[5:].strip()
+                          if data == "[DONE]": break
+                          try: chunk = json.loads(data)
+                          except Exception: continue
+                          ch = (chunk.get("choices") or [{}])[0]
+                          d = ch.get("delta") or {}
+                          c = d.get("content")
+                          if c is None: continue
+                          for kind, txt in blocks(c):
+                              kinds.add(kind)
+                              if kind == "thinking": thinking_chars += len(txt)
+                              else:
+                                  text_chars += len(txt)
+                                  if first_text is None: first_text = time.time()-t0
+                  print(f"[{label}] kinds={sorted(kinds)} thinking_chars={thinking_chars} text_chars={text_chars} first_text={None if first_text is None else round(first_text,1)}s total={round(time.time()-t0,1)}s")
               except Exception as e:
-                  body = ""
-                  if hasattr(e, "read"):
-                      try: body = e.read().decode()[:400]
-                      except Exception: pass
-                  print(f"[{label}] FAILED after {round(time.time()-t0,1)}s: {e}")
-                  print(f"[{label}] error body: {body}")
-          sys_prompt = "You are Stratagem, a legal analyst. Reply in plain text."
-          probe("small-text", [{"role":"system","content":sys_prompt},{"role":"user","content":"Hi, can you help with a tenancy issue?"}], False)
-          doc_like = "[Attached document: agreement.pdf]\n" + ("The tenant agrees to pay rent of $450 per week, due each Friday, commencing 3 March 2025. Clause 14: the landlord may end the agreement with 30 days notice. Clause 15: the tenant may end the agreement with 21 days notice. " * 90) + "\n\n(The user shared this document with no extra message - read it and tell them what it is, the key facts, dates and amounts, anything legally significant.)"
-          probe("big-doc-stream", [{"role":"system","content":sys_prompt},{"role":"user","content":doc_like}], True)
-          probe("empty-text", [{"role":"system","content":sys_prompt},{"role":"user","content":""}], False)
+                  eb = ""
+                  try:
+                      if hasattr(e, "read"): eb = e.read().decode()[:300]
+                  except Exception: pass
+                  print(f"[{label}] FAILED after {round(time.time()-t0,1)}s: {e} | {eb}")
+          print("Model:", model)
+          stream("baseline", {})
+          stream("thinking-disabled", {"thinking": "disabled"})
+          stream("reasoning-false", {"reasoning": {"enabled": False}})
+          stream("effort-none", {"reasoning_effort": "none"})
+          stream("effort-low", {"reasoning_effort": "low"})
+          stream("low-effort-alt", {"low_effort": True})
           PY
