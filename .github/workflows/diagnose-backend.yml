@@ -1,0 +1,67 @@
+name: Diagnose backend
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Mistral streaming with document-sized payload
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          CHAT_MODEL: ${{ vars.CHAT_MODEL || 'mistral-large-latest' }}
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.request, os
+          key = os.environ["MISTRAL_API_KEY"]
+          model = os.environ["CHAT_MODEL"].strip() or "mistral-large-latest"
+          print("Model:", model)
+          def probe(label, messages, stream):
+              body = {"model": model, "messages": messages, "stream": stream}
+              req = urllib.request.Request(
+                  "https://api.mistral.ai/v1/chat/completions",
+                  data=json.dumps(body).encode(),
+                  headers={"Authorization": "Bearer " + key, "Content-Type": "application/json", "Accept": "text/event-stream"},
+                  method="POST")
+              t0 = time.time()
+              try:
+                  with urllib.request.urlopen(req, timeout=300) as r:
+                      status = r.status
+                      print(f"[{label}] HTTP {status}")
+                      total = ""
+                      first_chunk_at = None
+                      if stream:
+                          for raw in r:
+                              line = raw.decode("utf-8", "replace").strip()
+                              if not line.startswith("data:"): continue
+                              data = line[5:].strip()
+                              if data == "[DONE]": break
+                              try:
+                                  chunk = json.loads(data)
+                              except Exception:
+                                  continue
+                              if first_chunk_at is None:
+                                  first_chunk_at = time.time() - t0
+                              ch = chunk.get("choices", [{}])[0]
+                              d = ch.get("delta") or {}
+                              total += d.get("content") or ""
+                          print(f"[{label}] first chunk after {first_chunk_at if first_chunk_at is None else round(first_chunk_at,1)}s")
+                      else:
+                          js = json.loads(r.read().decode())
+                          total = js["choices"][0]["message"].get("content") or ""
+                      print(f"[{label}] total {round(time.time()-t0,1)}s, reply length {len(total)}")
+                      print(f"[{label}] reply head:", repr(total[:200]))
+              except Exception as e:
+                  body = ""
+                  if hasattr(e, "read"):
+                      try: body = e.read().decode()[:400]
+                      except Exception: pass
+                  print(f"[{label}] FAILED after {round(time.time()-t0,1)}s: {e}")
+                  print(f"[{label}] error body: {body}")
+          sys_prompt = "You are Stratagem, a legal analyst. Reply in plain text."
+          probe("small-text", [{"role":"system","content":sys_prompt},{"role":"user","content":"Hi, can you help with a tenancy issue?"}], False)
+          doc_like = "[Attached document: agreement.pdf]\n" + ("The tenant agrees to pay rent of $450 per week, due each Friday, commencing 3 March 2025. Clause 14: the landlord may end the agreement with 30 days notice. Clause 15: the tenant may end the agreement with 21 days notice. " * 90) + "\n\n(The user shared this document with no extra message - read it and tell them what it is, the key facts, dates and amounts, anything legally significant.)"
+          probe("big-doc-stream", [{"role":"system","content":sys_prompt},{"role":"user","content":doc_like}], True)
+          probe("empty-text", [{"role":"system","content":sys_prompt},{"role":"user","content":""}], False)
+          PY
