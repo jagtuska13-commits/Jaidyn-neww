@@ -408,6 +408,22 @@ fun formatEmailDate(ts: Long): String {
     return java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))
 }
 
+fun stripMarkdown(raw: String): String {
+    var t = raw
+    t = t.replace("!", "!")
+    t = t.replace("```", " ")
+    t = Regex("^#{1,6} ", RegexOption.MULTILINE).replace(t, "")
+    t = Regex("[*]{2}(.+?)[*]{2}").replace(t, "$1")
+    t = Regex("__(.+?)__").replace(t, "$1")
+    t = Regex("`([^`]+)`").replace(t, "$1")
+    t = Regex("^> ?", RegexOption.MULTILINE).replace(t, "")
+    t = Regex("^\\s*[-*+] ", RegexOption.MULTILINE).replace(t, "")
+    t = Regex("^\\s*1\\. ", RegexOption.MULTILINE).replace(t, "")
+    t = Regex("[*](.+?)[*]").replace(t, "$1")
+    t = Regex("\\n{3,}").replace(t, "\\n\\n")
+    return t.trim()
+}
+
 @Composable
 fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
@@ -689,8 +705,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         }
                     } else {
                         Column(modifier = Modifier.fillMaxWidth()) {
+                            val displayText = remember(message.id, message.text) { stripMarkdown(message.text) }
                             if (message.text.isNotBlank()) {
-                                Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
+                                Text(displayText, color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
                             } else {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
                                     StrataLoader()
@@ -731,7 +748,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                         contentDescription = "Copy",
                                         tint = Color(0xB3FFFFFF),
                                         modifier = Modifier.size(16.dp).clickable {
-                                            clipboard.setText(AnnotatedString(message.text))
+                                            clipboard.setText(AnnotatedString(displayText))
                                         }
                                     )
                                     Icon(
