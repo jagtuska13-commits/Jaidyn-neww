@@ -184,67 +184,6 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
     }
 }
 
-@Composable
-fun WordFadeText(
-    text: String,
-    color: Color = Color.White,
-    fontSize: TextUnit = 15.sp,
-    fontWeight: FontWeight? = null
-) {
-    val words = remember(text) { if (text.isBlank()) emptyList() else text.split(" ") }
-    val alphas = remember { mutableStateListOf<Float>() }
-
-    LaunchedEffect(words.size) {
-        val start = alphas.size
-        while (alphas.size < words.size) alphas.add(0f)
-        suspend fun fadeWord(i: Int) {
-            var t = 0L
-            while (t < 180L) {
-                val p = (t / 180f).coerceIn(0f, 1f)
-                alphas[i] = p * p * (3f - 2f * p)
-                delay(16L)
-                t += 16L
-            }
-            alphas[i] = 1f
-        }
-        if (start == 0) {
-            for (i in 0 until words.size) {
-                fadeWord(i)
-                delay(70L)
-            }
-        } else {
-            for (i in start until words.size) {
-                launch {
-                    fadeWord(i)
-                }
-                delay(30L)
-            }
-        }
-    }
-
-    val annotated = buildAnnotatedString {
-        words.forEachIndexed { i, w ->
-            if (i > 0) append(" ")
-            withStyle(
-                SpanStyle(
-                    color = color.copy(alpha = alphas.getOrElse(i) { 0f }),
-                    fontSize = fontSize,
-                    fontWeight = fontWeight
-                )
-            ) {
-                append(w)
-            }
-        }
-    }
-    Text(
-        annotated,
-        color = color,
-        fontSize = fontSize,
-        fontWeight = fontWeight,
-        lineHeight = 22.sp
-    )
-}
-
 data class SmsThread(
     val address: String,
     val snippet: String,
@@ -709,7 +648,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     } else {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (message.text.isNotBlank()) {
-                                WordFadeText(text = message.text, color = Color.White, fontSize = 15.sp)
+                                Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
                             } else {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
                                     StrataLoader()
