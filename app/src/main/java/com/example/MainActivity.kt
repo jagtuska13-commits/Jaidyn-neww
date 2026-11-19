@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Bundle
 import android.util.Base64
 import androidx.activity.ComponentActivity
@@ -172,6 +173,16 @@ fun AnimatedBlobsBackground() {
                 center = Offset(cx, cy)
             )
         }
+    }
+}
+
+fun queryDisplayName(context: Context, uri: Uri): String? {
+    return try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (e: Exception) {
+        null
     }
 }
 
@@ -588,7 +599,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                 uris.forEach { uri ->
                     try {
-                        val name = (uri.lastPathSegment ?: "").substringAfterLast('/').ifBlank { "document.pdf" }
+                        val name = queryDisplayName(context, uri) ?: "document.pdf"
                         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                         if (bytes != null && bytes.size <= 8 * 1024 * 1024) {
                             val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)

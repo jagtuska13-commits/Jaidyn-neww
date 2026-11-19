@@ -609,7 +609,12 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             val text = if (msg.documentText != null) {
                 val docText = if (recent) msg.documentText.take(15000) else msg.documentText.take(4000)
                 (if (msg.text.isBlank()) "" else msg.text + "\n\n") +
-                    "[Attached document: ${msg.documentName}]\n$docText"
+                    "[Attached document: ${msg.documentName}]\n$docText" +
+                    if (msg.text.isBlank() && n - i <= 6) {
+                        "\n\n(The user shared this document with no extra message \u2014 read it and tell them what it is, the key facts, dates and amounts, anything legally significant, and what they might want to ask or do.)"
+                    } else ""
+            } else if (msg.text.isBlank() && msg.imageBase64 != null && n - i <= 4) {
+                "(The user sent an image with no message \u2014 look at it, describe what it shows, and offer how you can help with it.)"
             } else {
                 msg.text
             }
