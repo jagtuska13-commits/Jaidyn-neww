@@ -597,20 +597,24 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun buildHistoryPayloads(): List<ChatMessagePayload> {
-        return _chatHistory.value
+        val messages = _chatHistory.value
             .filterNot { !it.isUser && it.text.isBlank() }
-            .map { msg ->
+            .takeLast(24)
+        val n = messages.size
+        return messages.mapIndexed { i, msg ->
+            val recent = n - i <= 6
             val text = if (msg.documentText != null) {
+                val docText = if (recent) msg.documentText.take(15000) else msg.documentText.take(4000)
                 (if (msg.text.isBlank()) "" else msg.text + "\n\n") +
-                    "[Attached document: ${msg.documentName}]\n${msg.documentText.take(15000)}"
+                    "[Attached document: ${msg.documentName}]\n$docText"
             } else {
                 msg.text
             }
             ChatMessagePayload(
                 role = if (msg.isUser) "user" else "assistant",
                 text = text,
-                imageBase64 = msg.imageBase64,
-                imageMimeType = msg.imageMimeType
+                imageBase64 = if (n - i <= 4) msg.imageBase64 else null,
+                imageMimeType = if (n - i <= 4) msg.imageMimeType else null
             )
         }
     }
@@ -648,8 +652,9 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(tempFile.absolutePath)
-                prepare()
-                start()
+                setOnPreparedListener { player -> player.start() }
+                setOnErrorListener { player, _, _ -> player.release(); true }
+                prepareAsync()
             }
         } catch (e: Exception) {
             e.printStackTrace()
