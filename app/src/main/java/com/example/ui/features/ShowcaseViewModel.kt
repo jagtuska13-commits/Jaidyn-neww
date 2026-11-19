@@ -92,17 +92,44 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     private val _isReadingDoc = MutableStateFlow(false)
     val isReadingDoc: StateFlow<Boolean> = _isReadingDoc.asStateFlow()
 
+    private class PendingDoc(
+        val base64: String,
+        val mimeType: String,
+        val name: String,
+        val onDone: (String?) -> Unit
+    )
+
+    private var docQueueActive = false
+    private val docQueue = ArrayDeque<PendingDoc>()
+    private val _docsReading = MutableStateFlow(0)
+    val docsReading: StateFlow<Int> = _docsReading.asStateFlow()
+
     fun processDocument(base64: String, mimeType: String, name: String, onDone: (String?) -> Unit) {
-        if (_isReadingDoc.value) return
-        _isReadingDoc.value = true
+        synchronized(docQueue) {
+            docQueue.addLast(PendingDoc(base64, mimeType, name, onDone))
+            _docsReading.value = docQueue.size
+        }
+        if (docQueueActive) return
+        docQueueActive = true
         viewModelScope.launch {
             try {
-                val extracted = MistralApi.ocrDocument(base64, mimeType)
-                if (extracted.isBlank()) onDone(null) else onDone(extracted.take(15000))
-            } catch (e: Exception) {
-                onDone(null)
+                while (true) {
+                    val doc = synchronized(docQueue) {
+                        if (docQueue.isEmpty()) null else docQueue.removeFirst()
+                    } ?: break
+                    try {
+                        val extracted = MistralApi.ocrDocument(doc.base64, doc.mimeType)
+                        if (extracted.isBlank()) doc.onDone(null) else doc.onDone(extracted.take(15000))
+                    } catch (e: Exception) {
+                        doc.onDone(null)
+                    }
+                    synchronized(docQueue) {
+                        _docsReading.value = docQueue.size
+                    }
+                }
             } finally {
-                _isReadingDoc.value = false
+                docQueueActive = false
+                _docsReading.value = 0
             }
         }
     }

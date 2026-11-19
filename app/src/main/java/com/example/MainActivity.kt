@@ -444,6 +444,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val isLoading by viewModel.isLoading.collectAsState()
     val isTranscribing by viewModel.isTranscribing.collectAsState()
     val isReadingDocState by viewModel.isReadingDoc.collectAsState()
+    val docsReadingCount by viewModel.docsReading.collectAsState()
     val personaName by viewModel.personaName.collectAsState()
     val personaText by viewModel.personaText.collectAsState()
     val userName by viewModel.userName.collectAsState()
@@ -498,10 +499,22 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = { uri ->
-            if (uri != null) {
-                getResizedBase64(context, uri)?.let { pendingImages.add(it.first to it.second) }
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+        onResult = { uris ->
+            if (uris.isNotEmpty()) {
+                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    uris.forEach { uri ->
+                        try {
+                            val resized = getResizedBase64(context, uri)
+                            if (resized != null) {
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    pendingImages.add(resized.first to resized.second)
+                                }
+                            }
+                        } catch (e: Exception) {
+                        }
+                    }
+                }
             }
         }
     )
@@ -561,27 +574,33 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     }
 
     val docPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
             docError = false
-            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "document.pdf"
-            try {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                if (bytes != null && bytes.size <= 8 * 1024 * 1024) {
-                    val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                    viewModel.processDocument(b64, "application/pdf", name) { text ->
-                        if (text != null) {
-                            pendingDocs.add(name to text)
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                uris.forEach { uri ->
+                    try {
+                        val name = (uri.lastPathSegment ?: "").substringAfterLast('/').ifBlank { "document.pdf" }
+                        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        if (bytes != null && bytes.size <= 8 * 1024 * 1024) {
+                            val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                            viewModel.processDocument(b64, "application/pdf", name) { text ->
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    if (text != null) {
+                                        pendingDocs.add(name to text)
+                                    } else {
+                                        docError = true
+                                    }
+                                }
+                            }
                         } else {
-                            docError = true
+                            android.os.Handler(android.os.Looper.getMainLooper()).post { docError = true }
                         }
+                    } catch (e: Exception) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post { docError = true }
                     }
-                } else {
-                    docError = true
                 }
-            } catch (e: Exception) {
-                docError = true
             }
         }
     }
@@ -870,7 +889,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             AttachOptionButton(
                                 icon = Icons.Default.Description,
                                 label = "Document",
-                                onClick = { showAttachMenu = false; docPickerLauncher.launch("application/pdf") }
+                                onClick = { showAttachMenu = false; docPickerLauncher.launch(arrayOf("application/pdf")) }
                             )
                         }
                         AnimatedVisibility(visible = attachMenuShown >= 1, enter = scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 380f)) + fadeIn(), exit = shrinkOut() + fadeOut()) {
@@ -882,7 +901,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         }
                     }
                 }
-                if (pendingImages.isNotEmpty() || pendingDocs.isNotEmpty() || docError || isReadingDocState) {
+                if (pendingImages.isNotEmpty() || pendingDocs.isNotEmpty() || docError || docsReadingCount > 0) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -929,14 +948,14 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                 Icon(Icons.Default.Close, contentDescription = "Remove document", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { pendingDocs.removeAt(i) })
                             }
                         }
-                        if (isReadingDocState) {
+                        if (docsReadingCount > 0) {
                             Row(
                                 modifier = Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Reading document...", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text(if (docsReadingCount > 1) "Reading $docsReadingCount documents..." else "Reading document...", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
