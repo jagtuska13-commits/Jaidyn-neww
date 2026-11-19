@@ -59,13 +59,14 @@ object MistralApi {
 
     suspend fun chat(
         history: List<ChatMessagePayload>,
-        systemInstruction: String
+        systemInstruction: String,
+        reasoningEffort: String = "low"
     ): String = withContext(Dispatchers.IO) {
         try {
-            chatOnce(CHAT_MODEL, history, systemInstruction)
+            chatOnce(CHAT_MODEL, history, systemInstruction, reasoningEffort)
         } catch (e: Exception) {
             if (isModelAccessError(e) && CHAT_MODEL != FALLBACK_MODEL) {
-                chatOnce(FALLBACK_MODEL, history, systemInstruction)
+                chatOnce(FALLBACK_MODEL, history, systemInstruction, decisionEffortFallback(reasoningEffort))
             } else {
                 throw e
             }
@@ -75,9 +76,11 @@ object MistralApi {
     private suspend fun chatOnce(
         model: String,
         history: List<ChatMessagePayload>,
-        systemInstruction: String
+        systemInstruction: String,
+        reasoningEffort: String
     ): String = withContext(Dispatchers.IO) {
         val body = buildChatBody(history, systemInstruction).put("model", model)
+            .put("reasoning_effort", reasoningEffort)
 
         val request = Request.Builder()
             .url("$BASE_URL/v1/chat/completions")
@@ -103,18 +106,21 @@ object MistralApi {
     suspend fun chatStream(
         history: List<ChatMessagePayload>,
         systemInstruction: String,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        reasoningEffort: String = "low"
     ): String = withContext(Dispatchers.IO) {
         try {
-            chatStreamOnce(CHAT_MODEL, history, systemInstruction, onDelta)
+            chatStreamOnce(CHAT_MODEL, history, systemInstruction, onDelta, reasoningEffort)
         } catch (e: Exception) {
             if (isModelAccessError(e) && CHAT_MODEL != FALLBACK_MODEL) {
-                chatStreamOnce(FALLBACK_MODEL, history, systemInstruction, onDelta)
+                chatStreamOnce(FALLBACK_MODEL, history, systemInstruction, onDelta, reasoningEffort)
             } else {
                 throw e
             }
         }
     }
+
+    private fun decisionEffortFallback(effort: String): String = if (effort == "high") "medium" else effort
 
     private fun isModelAccessError(e: Exception): Boolean {
         val m = e.message ?: return false
@@ -126,9 +132,11 @@ object MistralApi {
         model: String,
         history: List<ChatMessagePayload>,
         systemInstruction: String,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        reasoningEffort: String
     ): String = withContext(Dispatchers.IO) {
         val chat = buildChatBody(history, systemInstruction).put("model", model).put("stream", true)
+            .put("reasoning_effort", reasoningEffort)
 
         val request = Request.Builder()
             .url("$BASE_URL/v1/chat/completions")

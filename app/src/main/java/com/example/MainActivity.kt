@@ -468,6 +468,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val userAbout by viewModel.userAbout.collectAsState()
     val jurisdiction by viewModel.jurisdiction.collectAsState()
     val legalDetail by viewModel.legalDetail.collectAsState()
+    val aiEffort by viewModel.aiEffort.collectAsState()
     val citeSources by viewModel.citeSources.collectAsState()
     val reportedAnswers by viewModel.reported.collectAsState()
     val speakReplies by viewModel.speakReplies.collectAsState()
@@ -1160,7 +1161,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     )
 
                     DrawerTextField(
-                        label = "AI personality",
+                        label = "CUSTOM INSTRUCTIONS (how you want it to act)",
                         value = personaText,
                         onValueChange = { viewModel.updatePersonaText(it) },
                         placeholder = "Inject personality: witty, caring, sarcastic...",
@@ -1268,6 +1269,29 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         placeholder = "Auto: Gmail, Outlook, Yahoo, iCloud"
                     )
 
+                    Text("AI POWER", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("low" to "Fast", "medium" to "Balanced", "high" to "Maximum").forEach { (key, label) ->
+                            val selected = aiEffort == key
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (selected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .border(1.dp, if (selected) Color.Transparent else Color(0x33FFFFFF), RoundedCornerShape(14.dp))
+                                    .clickable { viewModel.updateAiEffort(key) }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(label, color = if (selected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Text(
+                        "Fast replies instantly. Maximum thinks like a senior advocate - slower, deeper, sharper.",
+                        color = Color(0x80FFFFFF),
+                        fontSize = 11.sp
+                    )
                     Text("LEGAL DETAIL LEVEL", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("simple" to "Plain", "standard" to "Standard", "detailed" to "Detailed").forEach { (key, label) ->

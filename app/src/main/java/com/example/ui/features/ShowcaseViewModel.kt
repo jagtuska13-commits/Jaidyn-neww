@@ -164,12 +164,20 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     private val _legalDetail = MutableStateFlow(prefs.getString(PK_LEGAL_DETAIL, "standard") ?: "standard")
     val legalDetail: StateFlow<String> = _legalDetail.asStateFlow()
 
+    private val _aiEffort = MutableStateFlow(prefs.getString(PK_AI_EFFORT, "low") ?: "low")
+    val aiEffort: StateFlow<String> = _aiEffort.asStateFlow()
+
     private val _citeSources = MutableStateFlow(prefs.getBoolean(PK_CITE_SOURCES, true))
     val citeSources: StateFlow<Boolean> = _citeSources.asStateFlow()
 
     fun updateJurisdiction(value: String) {
         _jurisdiction.value = value
         prefs.edit().putString(PK_JURISDICTION, value).apply()
+    }
+
+    fun updateAiEffort(value: String) {
+        _aiEffort.value = value
+        prefs.edit().putString(PK_AI_EFFORT, value).apply()
     }
 
     fun updateLegalDetail(value: String) {
@@ -457,7 +465,8 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 onDelta = { chunk ->
                     streamed.append(chunk)
                     flush(false)
-                }
+                },
+                reasoningEffort = _aiEffort.value
             )
             flush(true)
 
@@ -564,6 +573,11 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 "them to bring you the legal matter whenever they're ready. 'That's not a legal question' and anything like it is " +
                 "banned. A greeting deserves a greeting, not a disclaimer."
         )
+        when (_aiEffort.value) {
+            "high" -> parts.add("Depth: think like a senior advocate under pressure. Work the problem hard - surface hidden risks, counterarguments, deadlines and procedural traps, and anticipate what the other side will do. Still answer in plain conversational prose.")
+            "medium" -> parts.add("Depth: balance speed and thoroughness - solid analysis followed by a clear answer.")
+            else -> parts.add("Depth: be crisp and decisive. Get to the useful answer fast without over-deliberating.")
+        }
         if (_reported.value.isNotEmpty()) {
             parts.add(
                 "The user flagged these past answers of yours as incorrect or unhelpful. Learn from them and do not repeat those mistakes:\n" +
@@ -888,6 +902,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_JURISDICTION = "jurisdiction"
         private const val PK_LEGAL_DETAIL = "legal_detail"
         private const val PK_CITE_SOURCES = "cite_sources"
+        private const val PK_AI_EFFORT = "ai_effort"
         private const val PK_EMAIL_ADDRESS = "email_address"
         private const val PK_EMAIL_PASSWORD = "email_password"
         private const val PK_EMAIL_HOST = "email_host"
