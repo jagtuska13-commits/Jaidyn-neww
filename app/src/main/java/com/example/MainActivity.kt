@@ -4,6 +4,7 @@ package com.example
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -95,7 +96,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.BuildConfig
 import com.example.api.EmailInbox
+import com.example.api.GmailRest
 import com.example.api.VoiceRecorder
 import com.example.ui.features.DisputeCase
 import com.example.ui.features.DisputeStatus
@@ -113,11 +116,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleOAuthCallback(intent)
         setContent {
             MyApplicationTheme {
                 GlassChatApp(viewModel, Modifier.fillMaxSize())
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleOAuthCallback(intent)
+    }
+
+    private fun handleOAuthCallback(intent: Intent?) {
+        val data = intent?.data ?: return
+        val code = data.getQueryParameter("code") ?: return
+        viewModel.completeGoogleSignIn(code)
     }
 }
 
@@ -324,19 +339,17 @@ fun AttachOptionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmailPickerSheet(
-    emailAddress: String,
-    emailPassword: String,
-    emailHost: String,
+    connectedLabel: String?,
+    load: suspend () -> List<EmailInbox.EmailThread>,
     onDismiss: () -> Unit,
     onPick: (EmailInbox.EmailThread) -> Unit
 ) {
     var threads by remember { mutableStateOf<List<EmailInbox.EmailThread>?>(null) }
-    val credentialsReady = emailAddress.isNotBlank() && emailPassword.isNotBlank()
     LaunchedEffect(Unit) {
-        if (credentialsReady) {
-            threads = withContext(Dispatchers.IO) {
-                EmailInbox.load(emailAddress, emailPassword, emailHost)
-            }
+        threads = try {
+            withContext(Dispatchers.IO) { load() }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
     ModalBottomSheet(
@@ -362,18 +375,19 @@ fun EmailPickerSheet(
                     )
                 )
             )
-            if (!credentialsReady) {
+            if (connectedLabel == null) {
                 Text(
-                    "Add your email address and IMAP password in Settings (the gear icon, top right) first.\n\nFor Gmail: turn on 2-step verification, then create an App Password at myaccount.google.com/apppasswords and paste it here in Settings.",
+                    "No email connected yet. Open Settings (gear icon, top right) and either fill in your Google Client ID and press SIGN IN WITH GOOGLE, or scroll to OTHER PROVIDERS and add your email with its password.",
                     color = Color(0xB3FFFFFF),
                     fontSize = 13.sp
                 )
             } else {
+                Text(connectedLabel, color = Color(0xFF00FFCC), fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 val list = threads
                 if (list == null) {
                     Text("Loading inbox...", color = Color(0xB3FFFFFF), fontSize = 14.sp)
                 } else if (list.isEmpty()) {
-                    Text("Couldn't load the inbox. Check your address, the IMAP password (app password, not your normal one), and the host in Settings.", color = Color(0xB3FFFFFF), fontSize = 13.sp)
+                    Text("Couldn't load the inbox. Double-check your sign-in or provider details in Settings.", color = Color(0xB3FFFFFF), fontSize = 13.sp)
                 } else {
                     list.take(25).forEach { t ->
                         Column(
@@ -444,6 +458,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val emailAddress by viewModel.emailAddress.collectAsState()
     val emailPassword by viewModel.emailPassword.collectAsState()
     val emailHost by viewModel.emailHost.collectAsState()
+    val googleClientId by viewModel.googleClientId.collectAsState()
+    val googleClientSecret by viewModel.googleClientSecret.collectAsState()
+    val gmailAccountEmail by viewModel.gmailAccountEmail.collectAsState()
     val clonedVoiceBase64 by viewModel.clonedVoiceBase64.collectAsState()
     val isSavingVoice by viewModel.isSavingVoice.collectAsState()
 
@@ -1040,10 +1057,21 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
 
         if (showEmailPicker) {
+            val gmailConnected = gmailAccountEmail.isNotBlank()
+            val imapConfigured = emailAddress.isNotBlank() && emailPassword.isNotBlank()
             EmailPickerSheet(
-                emailAddress = emailAddress,
-                emailPassword = emailPassword,
-                emailHost = emailHost,
+                connectedLabel = when {
+                    gmailConnected -> "Gmail — $gmailAccountEmail"
+                    imapConfigured -> "IMAP — $emailAddress"
+                    else -> null
+                },
+                load = {
+                    if (gmailConnected) {
+                        viewModel.loadGmailInbox()
+                    } else {
+                        EmailInbox.load(emailAddress, emailPassword, emailHost)
+                    }
+                },
                 onDismiss = { showEmailPicker = false },
                 onPick = { email ->
                     pendingDocs.add("Email — ${email.subject}" to email.text)
@@ -1065,6 +1093,12 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         .padding(bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    Text(
+                        "STRATAGEM v" + BuildConfig.VERSION_NAME,
+                        color = Color(0x60FFFFFF),
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp
+                    )
                     Text(
                         "PERSONA & PROFILE",
                         fontSize = 14.sp,
@@ -1116,17 +1150,74 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     )
 
                     Text("EMAIL INTEGRATION", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    if (gmailAccountEmail.isNotBlank()) {
+                        Text(
+                            "Signed in to Gmail as $gmailAccountEmail",
+                            color = Color(0xFF00FFCC),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "SIGN OUT",
+                            color = Color(0xFFFF4D6D),
+                            fontSize = 12.sp,
+                            modifier = Modifier.clickable { viewModel.signOutGmail() }
+                        )
+                    } else {
+                        DrawerTextField(
+                            label = "GOOGLE CLIENT ID",
+                            value = googleClientId,
+                            onValueChange = { viewModel.updateGoogleClientId(it) },
+                            placeholder = "From Google Cloud Console (one-time)"
+                        )
+                        DrawerTextField(
+                            label = "GOOGLE CLIENT SECRET",
+                            value = googleClientSecret,
+                            onValueChange = { viewModel.updateGoogleClientSecret(it) },
+                            placeholder = "From Google Cloud Console (one-time)",
+                            mask = true
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    Brush.linearGradient(listOf(Color(0xFF00FFCC), Color(0xFF0099FF))),
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .clickable {
+                                    viewModel.prepareGoogleSignIn()?.let { url ->
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "SIGN IN WITH GOOGLE",
+                                color = Color.Black,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        }
+                        Text(
+                            "Signs you in through Google \u2014 no passwords. Triggered once, then the email button reads your Gmail.",
+                            color = Color(0x80FFFFFF),
+                            fontSize = 11.sp
+                        )
+                    }
+                    Text("OTHER PROVIDERS (IMAP)", color = Color(0x80FFFFFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     DrawerTextField(
                         label = "EMAIL ADDRESS",
                         value = emailAddress,
                         onValueChange = { viewModel.updateEmailAddress(it) },
-                        placeholder = "you@gmail.com"
+                        placeholder = "you@outlook.com, yahoo, icloud..."
                     )
                     DrawerTextField(
-                        label = "IMAP PASSWORD (APP PASSWORD)",
+                        label = "IMAP PASSWORD / APP PASSWORD",
                         value = emailPassword,
                         onValueChange = { viewModel.updateEmailPassword(it) },
-                        placeholder = "Gmail: use an App Password, not your normal password",
+                        placeholder = "Your email or app password",
                         mask = true
                     )
                     DrawerTextField(
@@ -1134,11 +1225,6 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         value = emailHost,
                         onValueChange = { viewModel.updateEmailHost(it) },
                         placeholder = "Auto: Gmail, Outlook, Yahoo, iCloud"
-                    )
-                    Text(
-                        "Gmail: turn on 2-step verification, then create an App Password at myaccount.google.com/apppasswords. Outlook/other: use your IMAP/app password.",
-                        color = Color(0x80FFFFFF),
-                        fontSize = 11.sp
                     )
 
                     Text("LEGAL DETAIL LEVEL", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
