@@ -23,6 +23,7 @@ data class ChatMessagePayload(
 object MistralApi {
     private const val BASE_URL = "https://api.mistral.ai"
     private const val CHAT_MODEL = BuildConfig.CHAT_MODEL
+    private const val FALLBACK_MODEL = "mistral-small-latest"
     private const val TTS_MODEL = "voxtral-mini-tts-3-0"
     private const val TRANSCRIBE_MODEL = "voxtral-mini-latest"
     private val VOICE = when (BuildConfig.TTS_VOICE) {
@@ -59,21 +60,23 @@ object MistralApi {
         history: List<ChatMessagePayload>,
         systemInstruction: String
     ): String = withContext(Dispatchers.IO) {
-        val messages = JSONArray()
-        if (systemInstruction.isNotBlank()) {
-            messages.put(JSONObject().put("role", "system").put("content", systemInstruction))
+        try {
+            chatOnce(CHAT_MODEL, history, systemInstruction)
+        } catch (e: Exception) {
+            if (isModelAccessError(e) && CHAT_MODEL != FALLBACK_MODEL) {
+                chatOnce(FALLBACK_MODEL, history, systemInstruction)
+            } else {
+                throw e
+            }
         }
-        history.forEach { msg ->
-            messages.put(
-                JSONObject()
-                    .put("role", msg.role)
-                    .put("content", buildContent(msg))
-            )
-        }
+    }
 
-        val body = JSONObject()
-            .put("model", CHAT_MODEL)
-            .put("messages", messages)
+    private suspend fun chatOnce(
+        model: String,
+        history: List<ChatMessagePayload>,
+        systemInstruction: String
+    ): String = withContext(Dispatchers.IO) {
+        val body = buildChatBody(history, systemInstruction).put("model", model)
 
         val request = Request.Builder()
             .url("$BASE_URL/v1/chat/completions")
@@ -101,7 +104,30 @@ object MistralApi {
         systemInstruction: String,
         onDelta: (String) -> Unit
     ): String = withContext(Dispatchers.IO) {
-        val chat = buildChatBody(history, systemInstruction).put("stream", true)
+        try {
+            chatStreamOnce(CHAT_MODEL, history, systemInstruction, onDelta)
+        } catch (e: Exception) {
+            if (isModelAccessError(e) && CHAT_MODEL != FALLBACK_MODEL) {
+                chatStreamOnce(FALLBACK_MODEL, history, systemInstruction, onDelta)
+            } else {
+                throw e
+            }
+        }
+    }
+
+    private fun isModelAccessError(e: Exception): Boolean {
+        val m = e.message ?: return false
+        return m.contains("403") || m.contains("404") || m.contains("model_not_found") ||
+            m.contains("not allowed") || m.contains("Do not have access")
+    }
+
+    private suspend fun chatStreamOnce(
+        model: String,
+        history: List<ChatMessagePayload>,
+        systemInstruction: String,
+        onDelta: (String) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        val chat = buildChatBody(history, systemInstruction).put("model", model).put("stream", true)
 
         val request = Request.Builder()
             .url("$BASE_URL/v1/chat/completions")
@@ -155,7 +181,6 @@ object MistralApi {
             )
         }
         return JSONObject()
-            .put("model", CHAT_MODEL)
             .put("messages", messages)
     }
 
