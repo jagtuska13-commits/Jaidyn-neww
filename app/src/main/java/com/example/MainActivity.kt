@@ -64,8 +64,12 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextUnit
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -76,6 +80,7 @@ import com.example.ui.features.DisputeCase
 import com.example.ui.features.DisputeStatus
 import com.example.ui.features.ShowcaseViewModel
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -161,113 +166,44 @@ fun getResizedBase64(context: Context, uri: Uri): Pair<String, String>? {
 }
 
 @Composable
-fun Bubble3D(isUser: Boolean, content: @Composable () -> Unit) {
-    val corner = RoundedCornerShape(20.dp)
+fun WordFadeText(
+    text: String,
+    color: Color = Color.White,
+    fontSize: TextUnit = 15.sp,
+    fontWeight: FontWeight? = null
+) {
+    val words = remember(text) { if (text.isBlank()) emptyList() else text.split(" ") }
+    val alphas = remember { mutableStateListOf<Float>() }
 
-    Box(
-        modifier = Modifier
-            .widthIn(max = 310.dp)
-            .graphicsLayer {
-                shadowElevation = 22f
-                ambientShadowColor = Color(0x99000000)
-                spotShadowColor = Color(0x8C000000)
-                shape = corner
-                clip = false
+    LaunchedEffect(words.size) {
+        val start = alphas.size
+        while (alphas.size < words.size) alphas.add(0f)
+        for (i in start until words.size) {
+            launch {
+                delay((i - start) * 45L)
+                val anim = Animatable(0f)
+                anim.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) { value ->
+                    alphas[i] = value
+                }
             }
-            .background(Color(0xFF0A0E18).copy(alpha = 0.34f), corner)
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.09f),
-                        Color.White.copy(alpha = 0.02f)
-                    )
-                ),
-                corner
-            )
-            .border(
-                width = 0.8.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.38f),
-                        Color.White.copy(alpha = 0.10f),
-                        Color.White.copy(alpha = 0.04f)
-                    )
-                ),
-                shape = corner
-            )
-            .padding(horizontal = 18.dp, vertical = 14.dp)
-    ) {
-        content()
-    }
-}
-
-@Composable
-fun BubbleEntrance(isUser: Boolean, content: @Composable () -> Unit) {
-    val progress = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        if (isUser) {
-            progress.snapTo(0.6f)
-            progress.animateTo(
-                1f,
-                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 900f)
-            )
-        } else {
-            progress.animateTo(
-                1f,
-                tween(450, easing = FastOutSlowInEasing)
-            )
         }
     }
-    Box(
-        modifier = Modifier.graphicsLayer {
-            val p = progress.value
-            alpha = if (isUser) 1f else (p * 1.4f).coerceIn(0f, 1f)
-            scaleX = 0.75f + 0.25f * p
-            scaleY = 0.75f + 0.25f * p
-            translationX = if (isUser) (1f - p) * 40f else 0f
-            translationY = if (isUser) 0f else (1f - p) * 46f
-        }
-    ) {
-        content()
-    }
-}
 
-@Composable
-fun TypingIndicator() {
-    val transition = rememberInfiniteTransition(label = "typing")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "phase"
-    )
-
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .background(Color(0x1AFFFFFF), RoundedCornerShape(28.dp))
-            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(28.dp))
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        repeat(3) { i ->
-            val scale = 0.6f + 0.4f * kotlin.math.abs(kotlin.math.sin((phase - i) * kotlin.math.PI.toFloat() / 1.5f))
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        alpha = 0.4f + scale * 0.6f
-                    }
-                    .background(Color(0xFF80DEFF), CircleShape)
-            )
+    val annotated = buildAnnotatedString {
+        words.forEachIndexed { i, w ->
+            if (i > 0) append(" ")
+            withStyle(
+                SpanStyle(
+                    color = color,
+                    fontSize = fontSize,
+                    fontWeight = fontWeight
+                ).copy(alpha = alphas.getOrElse(i) { 1f })
+            ) {
+                append(w)
+            }
         }
     }
+    Text(annotated, color = color, fontSize = fontSize, fontWeight = fontWeight)
 }
 
 @Composable
@@ -434,6 +370,13 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    val streamingTextLength = chatHistory.lastOrNull()?.let { if (it.isUser) -1 else it.text.length } ?: -1
+    LaunchedEffect(streamingTextLength) {
+        if (streamingTextLength > 0) {
+            listState.animateScrollToItem(chatHistory.lastIndex)
+        }
+    }
+
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     LaunchedEffect(imeVisible) {
         if (imeVisible && chatHistory.isNotEmpty()) {
@@ -520,81 +463,86 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(chatHistory, key = { message -> message.id }) { message ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
-                    ) {
-                        BubbleEntrance(message.isUser) {
-                        Bubble3D(message.isUser) {
-                            Column {
-                                if (message.imageBase64 != null) {
-                                    val bitmap = remember(message.imageBase64) {
-                                        val bytes = Base64.decode(message.imageBase64, Base64.DEFAULT)
-                                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                                    }
-                                    bitmap?.let { Image(it, "Attached image", Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(12.dp)).padding(bottom = 8.dp), contentScale = ContentScale.Crop) }
+                    if (message.isUser) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            if (message.imageBase64 != null) {
+                                val bitmap = remember(message.imageBase64) {
+                                    val bytes = Base64.decode(message.imageBase64, Base64.DEFAULT)
+                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                                 }
-                                if (message.documentName != null) {
-                                    Row(
-                                        modifier = Modifier
-                                            .background(Color(0x26FFFFFF), RoundedCornerShape(10.dp))
-                                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("📄", fontSize = 12.sp)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(message.documentName!!, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                    }
-                                    if (message.text.isNotBlank()) Spacer(Modifier.height(8.dp))
+                                bitmap?.let { Image(it, "Attached image", Modifier.fillMaxWidth(0.55f).height(150.dp).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop) }
+                            }
+                            if (message.documentName != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color(0x26FFFFFF), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("📄", fontSize = 12.sp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(message.documentName!!, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                 }
-                                if (message.text.isNotBlank()) Text(message.text, color = Color.White, fontSize = 15.sp)
-                                if (!message.isUser) {
-                                    val clipboard = LocalClipboardManager.current
-                                    val isReported = reportedAnswers.any { it.first == message.id }
-                                    Row(
-                                        modifier = Modifier.padding(top = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(22.dp)
-                                    ) {
-                                        Text(
-                                            "🔊",
-                                            fontSize = 15.sp,
-                                            color = Color(0xB3FFFFFF),
-                                            modifier = Modifier.clickable {
-                                                playingAudioId = message.id
-                                                viewModel.speakMessage(message.text, message.audioBase64, context.cacheDir)
-                                            }
-                                        )
-                                        Text(
-                                            "⧉",
-                                            fontSize = 15.sp,
-                                            color = Color(0xB3FFFFFF),
-                                            modifier = Modifier.clickable {
-                                                clipboard.setText(AnnotatedString(message.text))
-                                            }
-                                        )
-                                        Text(
-                                            "🚩",
-                                            fontSize = 13.sp,
-                                            color = if (isReported) Color(0xFFFF4D6D) else Color(0x80FFFFFF),
-                                            modifier = Modifier.clickable {
-                                                viewModel.reportAnswer(message.id, message.text)
-                                            }
-                                        )
-                                        if (playingAudioId == message.id) {
-                                            AudioBars()
+                            }
+                            if (message.text.isNotBlank()) {
+                                Text(
+                                    message.text,
+                                    color = Color(0xFF9BE8FF),
+                                    fontSize = 15.sp,
+                                    modifier = Modifier.align(Alignment.End)
+                                )
+                            }
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            if (message.text.isNotBlank()) {
+                                WordFadeText(text = message.text, color = Color.White, fontSize = 15.sp)
+                            } else {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                    StrataLoader()
+                                }
+                            }
+                            if (message.text.isNotBlank()) {
+                                val clipboard = LocalClipboardManager.current
+                                val isReported = reportedAnswers.any { it.first == message.id }
+                                Row(
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(22.dp)
+                                ) {
+                                    Text(
+                                        "🔊",
+                                        fontSize = 15.sp,
+                                        color = Color(0xB3FFFFFF),
+                                        modifier = Modifier.clickable {
+                                            playingAudioId = message.id
+                                            viewModel.speakMessage(message.text, message.audioBase64, context.cacheDir)
                                         }
+                                    )
+                                    Text(
+                                        "⧉",
+                                        fontSize = 15.sp,
+                                        color = Color(0xB3FFFFFF),
+                                        modifier = Modifier.clickable {
+                                            clipboard.setText(AnnotatedString(message.text))
+                                        }
+                                    )
+                                    Text(
+                                        "🚩",
+                                        fontSize = 13.sp,
+                                        color = if (isReported) Color(0xFFFF4D6D) else Color(0x80FFFFFF),
+                                        modifier = Modifier.clickable {
+                                            viewModel.reportAnswer(message.id, message.text)
+                                        }
+                                    )
+                                    if (playingAudioId == message.id) {
+                                        AudioBars()
                                     }
                                 }
                             }
-                        }
-                        }
-                    }
-                }
-                if (isLoading) {
-                    item(key = "typing-indicator") {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                            StrataLoader()
                         }
                     }
                 }
@@ -691,7 +639,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                 innerTextField()
                             }
                             AnimatedSendButton(
-                                enabled = (inputText.isNotBlank() || selectedImageBase64 != null || selectedDocText != null) && !isLoading,
+                                enabled = inputText.isNotBlank() || selectedImageBase64 != null || selectedDocText != null,
                                 onClick = {
                                     splashGone = true
                                     viewModel.sendMessage(

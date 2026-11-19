@@ -96,6 +96,69 @@ object MistralApi {
         }
     }
 
+    suspend fun chatStream(
+        history: List<ChatMessagePayload>,
+        systemInstruction: String,
+        onDelta: (String) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        val chat = buildChatBody(history, systemInstruction).put("stream", true)
+
+        val request = Request.Builder()
+            .url("$BASE_URL/v1/chat/completions")
+            .header("Authorization", authHeader())
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .post(chat.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val streamed = StringBuilder()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val responseBody = response.body?.string().orEmpty()
+                throw Exception("Mistral chat error ${response.code}: ${responseBody.take(300)}")
+            }
+            val source = response.body?.source() ?: throw Exception("No response body")
+            while (!source.exhausted()) {
+                val line = source.readUtf8Line() ?: break
+                if (!line.startsWith("data: ")) continue
+                val data = line.removePrefix("data: ").trim()
+                if (data == "[DONE]") break
+                if (data.isEmpty()) continue
+                try {
+                    val chunk = JSONObject(data)
+                    val delta = chunk.getJSONArray("choices").optJSONObject(0)?.getJSONObject("delta")
+                    val piece = delta?.optString("content") ?: ""
+                    if (piece.isNotEmpty()) {
+                        streamed.append(piece)
+                        onDelta(piece)
+                    }
+                } catch (e: Exception) {
+                }
+            }
+        }
+        streamed.toString().ifBlank { "No response" }
+    }
+
+    private fun buildChatBody(
+        history: List<ChatMessagePayload>,
+        systemInstruction: String
+    ): JSONObject {
+        val messages = JSONArray()
+        if (systemInstruction.isNotBlank()) {
+            messages.put(JSONObject().put("role", "system").put("content", systemInstruction))
+        }
+        history.forEach { msg ->
+            messages.put(
+                JSONObject()
+                    .put("role", msg.role)
+                    .put("content", buildContent(msg))
+            )
+        }
+        return JSONObject()
+            .put("model", CHAT_MODEL)
+            .put("messages", messages)
+    }
+
     suspend fun textToSpeech(text: String, refAudioBase64: String? = null): ByteArray = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("model", TTS_MODEL)

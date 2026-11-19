@@ -244,6 +244,8 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().remove(PK_CLONED_VOICE).putBoolean(PK_USE_CLONED, false).apply()
     }
 
+    private var isGenerating = false
+
     fun sendMessage(
         text: String,
         cacheDir: File,
@@ -263,49 +265,90 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             documentText = documentText
         )
         _chatHistory.value = _chatHistory.value + userMsg
+        if (isGenerating) return
+        isGenerating = true
         _isLoading.value = true
 
         viewModelScope.launch {
             try {
-                val searchContext = if (_useLiveSearch.value && text.isNotBlank()) {
-                    val searchQuery = if (_jurisdiction.value.isNotBlank()) {
-                        "$text ${_jurisdiction.value.trim()} law current"
-                    } else text
-                    val results = MistralApi.webSearch(searchQuery)
-                    if (results.isNotBlank()) "Live web search results for the user's latest message (use for current facts, cite sources when relevant):\n$results" else ""
-                } else ""
-                val reply = MistralApi.chat(
-                    history = buildHistoryPayloads(),
-                    systemInstruction = buildSystemInstruction() + if (searchContext.isNotBlank()) "\n\n$searchContext" else ""
-                )
-                recordExchange(text, reply)
-                var audioBase64: String? = null
-                if (_speakReplies.value) {
-                    try {
-                        val refAudio = if (_useClonedVoice.value && _clonedVoiceBase64.value.isNotBlank()) _clonedVoiceBase64.value else null
-                        val audioBytes = MistralApi.textToSpeech(reply, refAudio)
-                        audioBase64 = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                while (hasPendingUserMessages()) {
+                    generateNextReply(cacheDir)
                 }
-                _chatHistory.value = _chatHistory.value + ChatMessage(
-                    text = reply,
-                    isUser = false,
-                    audioBase64 = audioBase64
-                )
-                if (audioBase64 != null) {
-                    playAudioFromBase64(audioBase64, cacheDir)
-                }
-            } catch (e: Exception) {
-                _chatHistory.value = _chatHistory.value + ChatMessage(
-                    text = "Error: ${e.message}",
-                    isUser = false
-                )
             } finally {
                 _isLoading.value = false
+                isGenerating = false
             }
         }
+    }
+
+    private fun hasPendingUserMessages(): Boolean {
+        val lastAssistantIndex = _chatHistory.value.indexOfLast { !it.isUser }
+        return _chatHistory.value.drop(lastAssistantIndex + 1).any { it.isUser }
+    }
+
+    private suspend fun generateNextReply(cacheDir: File) {
+        val lastAssistantIndex = _chatHistory.value.indexOfLast { !it.isUser }
+        val pendingUser = _chatHistory.value.drop(lastAssistantIndex + 1).filter { it.isUser }
+        if (pendingUser.isEmpty()) return
+
+        val assistantId = UUID.randomUUID().toString()
+        _chatHistory.value = _chatHistory.value + ChatMessage(id = assistantId, text = "", isUser = false)
+
+        try {
+            val latestText = pendingUser.last().text
+            val searchContext = if (_useLiveSearch.value && latestText.isNotBlank()) {
+                val searchQuery = if (_jurisdiction.value.isNotBlank()) {
+                    "$latestText ${_jurisdiction.value.trim()} law current"
+                } else latestText
+                val results = MistralApi.webSearch(searchQuery)
+                if (results.isNotBlank()) "Live web search results for the user's latest message (use for current facts, cite sources when relevant):\n$results" else ""
+            } else ""
+
+            val streamed = StringBuilder()
+            var lastEmit = 0L
+            fun flush(force: Boolean) {
+                val now = System.currentTimeMillis()
+                if (force || now - lastEmit >= 90) {
+                    lastEmit = now
+                    updateAssistantMessage(assistantId) { it.copy(text = streamed.toString()) }
+                }
+            }
+
+            MistralApi.chatStream(
+                history = buildHistoryPayloads(),
+                systemInstruction = buildSystemInstruction() + if (searchContext.isNotBlank()) "\n\n$searchContext" else "",
+                onDelta = { chunk ->
+                    streamed.append(chunk)
+                    flush(false)
+                }
+            )
+            flush(true)
+
+            val reply = streamed.toString().trim()
+            updateAssistantMessage(assistantId) { it.copy(text = reply) }
+            recordExchange(pendingUser.joinToString(" ") { it.text }.trim(), reply)
+
+            var audioBase64: String? = null
+            if (_speakReplies.value) {
+                try {
+                    val refAudio = if (_useClonedVoice.value && _clonedVoiceBase64.value.isNotBlank()) _clonedVoiceBase64.value else null
+                    val audioBytes = MistralApi.textToSpeech(reply, refAudio)
+                    audioBase64 = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
+                    updateAssistantMessage(assistantId) { it.copy(audioBase64 = audioBase64) }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            if (audioBase64 != null) {
+                playAudioFromBase64(audioBase64, cacheDir)
+            }
+        } catch (e: Exception) {
+            updateAssistantMessage(assistantId) { it.copy(text = "Error: ${e.message}") }
+        }
+    }
+
+    private fun updateAssistantMessage(id: String, transform: (ChatMessage) -> ChatMessage) {
+        _chatHistory.value = _chatHistory.value.map { if (it.id == id) transform(it) else it }
     }
 
     private fun recordExchange(userText: String, assistantReply: String) {
@@ -374,7 +417,11 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                 "what actually matters. If the honest answer is 'it depends' or 'this is genuinely unsettled', say that " +
                 "plainly and explain what it turns on. " +
                 "You're not a lawyer and this isn't legal advice — mention that once, briefly, when the stakes are real; " +
-                "don't repeat it like a disclaimer machine."
+                "don't repeat it like a disclaimer machine. " +
+                "Never reject or lecture the user for chatting. If they say hi, make small talk, or ask something that isn't " +
+                "legal, be a warm human about it — greet them back, chat naturally, answer briefly if you can — and invite " +
+                "them to bring you the legal matter whenever they're ready. 'That's not a legal question' and anything like it is " +
+                "banned. A greeting deserves a greeting, not a disclaimer."
         )
         if (_reported.value.isNotEmpty()) {
             parts.add(
@@ -412,7 +459,9 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun buildHistoryPayloads(): List<ChatMessagePayload> {
-        return _chatHistory.value.map { msg ->
+        return _chatHistory.value
+            .filterNot { !it.isUser && it.text.isBlank() }
+            .map { msg ->
             val text = if (msg.documentText != null) {
                 (if (msg.text.isBlank()) "" else msg.text + "\n\n") +
                     "[Attached document: ${msg.documentName}]\n${msg.documentText.take(15000)}"
