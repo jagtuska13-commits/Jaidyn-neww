@@ -21,6 +21,8 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkOut
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -46,6 +48,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -71,6 +74,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -291,6 +295,32 @@ fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
     }
 }
 
+@Composable
+fun AttachOptionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(30.dp))
+            .background(Color(0x33141414))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(
+                    Brush.linearGradient(listOf(Color(0xFF00FFCC), Color(0xFF0099FF))),
+                    CircleShape
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = label, tint = Color.Black, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmailPickerSheet(
@@ -414,6 +444,18 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var docError by remember { mutableStateOf(false) }
     var showSmsPicker by remember { mutableStateOf(false) }
     var showEmailPicker by remember { mutableStateOf(false) }
+    var showAttachMenu by remember { mutableStateOf(false) }
+    var attachMenuShown by remember { mutableStateOf(0) }
+    LaunchedEffect(showAttachMenu) {
+        if (showAttachMenu) {
+            for (i in 1..4) {
+                attachMenuShown = i
+                delay(50L)
+            }
+        } else {
+            attachMenuShown = 0
+        }
+    }
     var showDisputes by remember { mutableStateOf(false) }
     var openDisputeId by remember { mutableStateOf<String?>(null) }
     var disputeError by remember { mutableStateOf(false) }
@@ -757,6 +799,55 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
+                AnimatedVisibility(
+                    visible = attachMenuShown > 0 || showAttachMenu,
+                    enter = fadeIn(tween(120)),
+                    exit = fadeOut(tween(150))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        AnimatedVisibility(visible = attachMenuShown >= 4, enter = scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 380f)) + fadeIn(), exit = shrinkOut() + fadeOut()) {
+                            AttachOptionButton(
+                                icon = Icons.Default.Email,
+                                label = "Email",
+                                onClick = { showAttachMenu = false; showEmailPicker = true }
+                            )
+                        }
+                        AnimatedVisibility(visible = attachMenuShown >= 3, enter = scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 380f)) + fadeIn(), exit = shrinkOut() + fadeOut()) {
+                            AttachOptionButton(
+                                icon = Icons.Default.Sms,
+                                label = "SMS thread",
+                                onClick = {
+                                    showAttachMenu = false
+                                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                                    if (granted) {
+                                        showSmsPicker = true
+                                    } else {
+                                        smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
+                                    }
+                                }
+                            )
+                        }
+                        AnimatedVisibility(visible = attachMenuShown >= 2, enter = scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 380f)) + fadeIn(), exit = shrinkOut() + fadeOut()) {
+                            AttachOptionButton(
+                                icon = Icons.Default.Description,
+                                label = "Document",
+                                onClick = { showAttachMenu = false; docPickerLauncher.launch("application/pdf") }
+                            )
+                        }
+                        AnimatedVisibility(visible = attachMenuShown >= 1, enter = scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 380f)) + fadeIn(), exit = shrinkOut() + fadeOut()) {
+                            AttachOptionButton(
+                                icon = Icons.Default.Image,
+                                label = "Image",
+                                onClick = { showAttachMenu = false; imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                            )
+                        }
+                    }
+                }
                 if (pendingImages.isNotEmpty() || pendingDocs.isNotEmpty() || docError || isReadingDocState) {
                     Row(
                         modifier = Modifier
@@ -855,17 +946,22 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
                         decorationBox = { innerTextField ->
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                                IconButton(onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Add, contentDescription = "Attach image", tint = Color.White, modifier = Modifier.size(22.dp)) }
-                                IconButton(onClick = { docPickerLauncher.launch("application/pdf") }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Description, contentDescription = "Attach document", tint = Color.White, modifier = Modifier.size(20.dp)) }
-                                IconButton(onClick = {
-                                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-                                    if (granted) {
-                                        showSmsPicker = true
-                                    } else {
-                                        smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
-                                    }
-                                }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Sms, contentDescription = "Attach SMS thread", tint = Color.White, modifier = Modifier.size(20.dp)) }
-                                IconButton(onClick = { showEmailPicker = true }, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Email, contentDescription = "Attach email", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                                val plusRotation by animateFloatAsState(
+                                    targetValue = if (showAttachMenu) 45f else 0f,
+                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                    label = "plus-rotation"
+                                )
+                                Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "Add attachment",
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .graphicsLayer { rotationZ = plusRotation }
+                                            .clickable { showAttachMenu = !showAttachMenu }
+                                    )
+                                }
                                 PulsingMicButton(
                                     isRecording = isRecording,
                                     isTranscribing = isTranscribing,
