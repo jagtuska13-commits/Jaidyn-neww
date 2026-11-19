@@ -91,11 +91,11 @@ object MistralApi {
                 throw Exception("Mistral chat error ${response.code}: ${responseBody.take(300)}")
             }
             val json = JSONObject(responseBody)
-            json.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .optString("content")
-                .ifBlank { "No response" }
+            val message = json.getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+            val reply = extractTextContent(message.opt("content")).ifBlank {
+                message.optString("content").ifBlank { "No response" }
+            }
+            reply
         }
     }
 
@@ -153,7 +153,8 @@ object MistralApi {
                 try {
                     val chunk = JSONObject(data)
                     val delta = chunk.getJSONArray("choices").optJSONObject(0)?.getJSONObject("delta")
-                    val piece = delta?.optString("content") ?: ""
+                    val contentValue = delta?.opt("content")
+                    val piece = extractTextContent(contentValue)
                     if (piece.isNotEmpty()) {
                         streamed.append(piece)
                         onDelta(piece)
@@ -163,6 +164,31 @@ object MistralApi {
             }
         }
         streamed.toString().ifBlank { "No response" }
+    }
+
+    private fun extractTextContent(contentObj: Any?): String {
+        val sb = StringBuilder()
+        fun appendBlock(block: JSONObject) {
+            when (block.optString("type")) {
+                "thinking", "reasoning" -> {}
+                else -> {
+                    val txt = block.optString("text")
+                    if (txt.isNotEmpty() && block.optString("type").ifBlank { "text" } == "text") {
+                        sb.append(txt)
+                    }
+                }
+            }
+        }
+        when (contentObj) {
+            is String -> sb.append(contentObj)
+            is JSONObject -> appendBlock(contentObj)
+            is JSONArray -> {
+                for (i in 0 until contentObj.length()) {
+                    (contentObj.opt(i) as? JSONObject)?.let { appendBlock(it) }
+                }
+            }
+        }
+        return sb.toString()
     }
 
     private fun buildChatBody(
