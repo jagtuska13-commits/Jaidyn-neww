@@ -81,7 +81,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -312,6 +314,7 @@ fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
 
 @Composable
 fun AttachOptionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -326,7 +329,10 @@ fun AttachOptionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
                     Brush.linearGradient(listOf(Color(0xFF00FFCC), Color(0xFF0099FF))),
                     CircleShape
                 )
-                .clickable(onClick = onClick),
+                .clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onClick()
+                },
             contentAlignment = Alignment.Center
         ) {
             Icon(icon, contentDescription = label, tint = Color.Black, modifier = Modifier.size(20.dp))
@@ -497,6 +503,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(),
@@ -1012,7 +1019,10 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                         modifier = Modifier
                                             .size(24.dp)
                                             .graphicsLayer { rotationZ = plusRotation }
-                                            .clickable { showAttachMenu = !showAttachMenu }
+                                            .clickable {
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                showAttachMenu = !showAttachMenu
+                                            }
                                     )
                                 }
                                 PulsingMicButton(
@@ -1040,6 +1050,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                 AnimatedSendButton(
                                     enabled = inputText.isNotBlank() || pendingImages.isNotEmpty() || pendingDocs.isNotEmpty(),
                                     onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         splashGone = true
                                         pendingImages.forEach { (img, mime) ->
                                             viewModel.sendMessage("", context.cacheDir, img, mime)

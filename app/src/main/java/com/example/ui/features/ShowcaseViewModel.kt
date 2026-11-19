@@ -50,7 +50,7 @@ data class ChatMessage(
 class ShowcaseViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs: SharedPreferences = application.getSharedPreferences("jaggedgem_prefs", Context.MODE_PRIVATE)
 
-    private val _chatHistory = MutableStateFlow<List<ChatMessage>>(emptyList())
+    private val _chatHistory = MutableStateFlow(loadChatHistory())
     val chatHistory: StateFlow<List<ChatMessage>> = _chatHistory.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -401,6 +401,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             documentText = documentText
         )
         _chatHistory.value = _chatHistory.value + userMsg
+        persistChatHistory()
         if (isGenerating) return
         isGenerating = true
         _isLoading.value = true
@@ -480,6 +481,8 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             }
         } catch (e: Exception) {
             updateAssistantMessage(assistantId) { it.copy(text = "Error: ${e.message}") }
+        } finally {
+            persistChatHistory()
         }
     }
 
@@ -787,6 +790,49 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putString(PK_DISPUTES, arr.toString()).apply()
     }
 
+    private fun persistChatHistory() {
+        try {
+            val arr = JSONArray()
+            _chatHistory.value.takeLast(100).forEach { m ->
+                val o = JSONObject()
+                    .put("id", m.id)
+                    .put("text", m.text.take(6000))
+                    .put("isUser", m.isUser)
+                if (m.documentName != null) {
+                    o.put("documentName", m.documentName)
+                    o.put("documentText", m.documentText?.take(8000) ?: "")
+                }
+                arr.put(o)
+            }
+            prefs.edit().putString(PK_CHAT_HISTORY, arr.toString()).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadChatHistory(): List<ChatMessage> {
+        return try {
+            val raw = prefs.getString(PK_CHAT_HISTORY, null) ?: return emptyList()
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                val text = o.optString("text")
+                val docName = if (o.has("documentName")) o.getString("documentName") else null
+                val docText = if (o.has("documentText")) o.optString("documentText") else null
+                if (text.isBlank() && docName == null) return@mapNotNull null
+                ChatMessage(
+                    id = o.getString("id"),
+                    text = text,
+                    isUser = o.getBoolean("isUser"),
+                    documentName = docName,
+                    documentText = docText
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     private fun loadDisputes(): List<DisputeCase> {
         return try {
             val raw = prefs.getString(PK_DISPUTES, null) ?: return emptyList()
@@ -829,6 +875,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_USE_CLONED = "use_cloned_voice"
         private const val PK_CLONED_VOICE = "cloned_voice_base64"
         private const val PK_DISPUTES = "disputes_json"
+        private const val PK_CHAT_HISTORY = "chat_history_json"
         private const val PK_LIVE_SEARCH = "use_live_search"
         private const val PK_MEMORY_DIGEST = "memory_digest"
         private const val PK_MEMORY_LOG = "memory_log"
