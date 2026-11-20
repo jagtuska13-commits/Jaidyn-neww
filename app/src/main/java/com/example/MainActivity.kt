@@ -230,11 +230,12 @@ data class SmsThread(
 )
 
 fun loadSmsThreads(context: Context, maxThreads: Int = 500, perThread: Int = 15): List<SmsThread> {
-    val map = LinkedHashMap<String, MutableList<Pair<Long, String>>>()
+    data class RawSms(val date: Long, val body: String, val sent: Boolean)
+    val map = LinkedHashMap<String, MutableList<RawSms>>()
     try {
         val cursor = context.contentResolver.query(
-            android.net.Uri.parse("content://sms/inbox"),
-            arrayOf("address", "body", "date"),
+            android.net.Uri.parse("content://sms"),
+            arrayOf("address", "body", "date", "type"),
             null,
             null,
             "date DESC"
@@ -244,7 +245,8 @@ fun loadSmsThreads(context: Context, maxThreads: Int = 500, perThread: Int = 15)
                 val addr = c.getString(0) ?: continue
                 val body = c.getString(1) ?: ""
                 val date = c.getLong(2)
-                map.getOrPut(addr) { mutableListOf() }.add(date to body)
+                val type = c.getInt(3)
+                map.getOrPut(addr) { mutableListOf() }.add(RawSms(date, body, type == 2 || type == 4 || type == 6))
                 if (map.size > maxThreads) break
             }
         }
@@ -253,14 +255,17 @@ fun loadSmsThreads(context: Context, maxThreads: Int = 500, perThread: Int = 15)
     }
     val fmt = java.text.SimpleDateFormat("d MMM yyyy HH:mm", java.util.Locale.getDefault())
     return map.entries.map { (addr, msgs) ->
-        val recent = msgs.take(perThread).sortedBy { it.first }
+        val recent = msgs.take(perThread).sortedBy { it.date }
         SmsThread(
             address = addr,
-            snippet = recent.lastOrNull()?.second?.take(60) ?: "",
+            snippet = recent.lastOrNull()?.body?.take(60) ?: "",
             count = msgs.size,
-            latestDate = msgs.firstOrNull()?.first ?: 0L,
+            latestDate = msgs.firstOrNull()?.date ?: 0L,
             text = "SMS thread with $addr (${recent.size} recent message(s), oldest first, most recent last):\n\n" +
-                recent.joinToString("\n") { "[${fmt.format(java.util.Date(it.first))}] ${it.second}" }
+                recent.joinToString("\n") { sms ->
+                    val who = if (sms.sent) "You" else "Them"
+                    "[${fmt.format(java.util.Date(sms.date))}] $who: ${sms.body}"
+                }
         )
     }.sortedByDescending { it.latestDate }.take(maxThreads)
 }
@@ -282,12 +287,14 @@ fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 560.dp)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "RECENT SMS THREADS",
+                "SMS THREADS",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 2.sp,
