@@ -44,6 +44,15 @@ data class VaultFile(
     val convId: String
 )
 
+data class DocketEvent(
+    val id: String,
+    val ts: Long,
+    val description: String,
+    val convId: String,
+    val isDeadline: Boolean,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class ConversationMeta(
     val id: String,
     val title: String,
@@ -83,6 +92,105 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
 
     fun currentMatterId(): String = currentConversationId
 
+    private val _docket = MutableStateFlow(loadDocket())
+    val docket: StateFlow<List<DocketEvent>> = _docket.asStateFlow()
+
+    private fun extractDocketFrom(text: String, convId: String) {
+        try {
+            val found = mutableListOf<DocketEvent>()
+            val dateRegex = Regex("\\d{1,2}(?:st|nd|rd|th)? (?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec) \\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec) \\d{1,2}(?:st|nd|rd|th)?,? \\d{4}|\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b|\\b\\d{1,2}-\\d{1,2}-\\d{2,4}\\b")
+            val deadlineWords = listOf("deadline", "due", "by ", "before ", "expires", "lodge", "lodge by", "file by", "filing", "hearing", "mention", "court date", "respond by", "reply by", "commence", "respond within", "notice period")
+            for (m in dateRegex.findAll(text)) {
+                val parsed = parseFlexibleDate(m.value) ?: continue
+                val start = maxOf(0, m.range.first - 70)
+                val end = minOf(text.length, m.range.last + 70)
+                var desc = text.substring(start, end).replace("\\s+", " ").trim()
+                if (desc.length > 110) desc = desc.take(110) + "..."
+                val isDeadline = deadlineWords.any { desc.lowercase().contains(it) }
+                found.add(
+                    DocketEvent(
+                        id = UUID.randomUUID().toString(),
+                        ts = parsed,
+                        description = desc,
+                        convId = convId,
+                        isDeadline = isDeadline
+                    )
+                )
+            }
+            if (found.isEmpty()) return
+            val existing = _docket.value
+            val toAdd = found.filter { f ->
+                existing.none { Math.abs(it.ts - f.ts) < 43200000L && it.convId == f.convId }
+            }
+            if (toAdd.isEmpty()) return
+            val combined = (existing + toAdd).sortedBy { it.ts }
+            persistDocket(combined)
+            _docket.value = combined
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun parseFlexibleDate(raw0: String): Long? {
+        val raw = raw0.replace(Regex("(st|nd|rd|th)", RegexOption.IGNORE_CASE), "").trim()
+        val formats = listOf("d MMMM yyyy", "d MMM yyyy", "MMMM d yyyy", "MMMM d, yyyy", "d/M/yyyy", "d/M/yy", "d-M-yyyy", "d-M-yy")
+        for (f in formats) {
+            try {
+                val fmt = java.text.SimpleDateFormat(f, java.util.Locale.ENGLISH)
+                fmt.isLenient = false
+                val d = fmt.parse(raw) ?: continue
+                return d.time
+            } catch (e: Exception) {
+            }
+        }
+        return null
+    }
+
+    private fun persistDocket(events: List<DocketEvent>) {
+        try {
+            val arr = JSONArray()
+            events.takeLast(300).forEach { e ->
+                arr.put(
+                    JSONObject()
+                        .put("id", e.id)
+                        .put("ts", e.ts)
+                        .put("description", e.description.take(300))
+                        .put("convId", e.convId)
+                        .put("isDeadline", e.isDeadline)
+                        .put("createdAt", e.createdAt)
+                )
+            }
+            prefs.edit().putString(PK_DOCKET, arr.toString()).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadDocket(): List<DocketEvent> {
+        return try {
+            val arr = JSONArray(prefs.getString(PK_DOCKET, "[]") ?: "[]")
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                DocketEvent(
+                    id = o.getString("id"),
+                    ts = o.optLong("ts", 0L),
+                    description = o.optString("description"),
+                    convId = o.optString("convId", ""),
+                    isDeadline = o.optBoolean("isDeadline", false),
+                    createdAt = o.optLong("createdAt", 0L)
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun deleteDocketEvent(id: String) {
+        val updated = _docket.value.filterNot { it.id == id }
+        persistDocket(updated)
+        _docket.value = updated
+    }
+
     fun saveToVault(name: String, text: String) {
         try {
             val file = VaultFile(
@@ -104,6 +212,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             while (arr.length() > 100) arr.remove(0)
             prefs.edit().putString(PK_VAULT, arr.toString()).apply()
             _vault.value = loadVault()
+            extractDocketFrom(text, currentConversationId)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -562,6 +671,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             val reply = streamed.toString().trim()
             updateAssistantMessage(assistantId) { it.copy(text = reply) }
             recordExchange(pendingUser.joinToString(" ") { it.text }.trim(), reply)
+            extractDocketFrom(reply, currentConversationId)
 
             var audioBase64: String? = null
             if (_speakReplies.value) {
@@ -1100,6 +1210,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_CHAT_HISTORY = "chat_history_json"
         private const val PK_CONVERSATIONS = "conversations_json"
         private const val PK_VAULT = "case_vault_json"
+        private const val PK_DOCKET = "docket_json"
         private const val PK_LIVE_SEARCH = "use_live_search"
         private const val PK_MEMORY_DIGEST = "memory_digest"
         private const val PK_MEMORY_LOG = "memory_log"

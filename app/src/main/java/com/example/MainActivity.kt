@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
@@ -108,6 +109,7 @@ import com.example.api.VoiceRecorder
 import com.example.ui.features.DisputeCase
 import com.example.ui.features.DisputeStatus
 import com.example.ui.features.ShowcaseViewModel
+import com.example.ui.features.DocketEvent
 import com.example.ui.features.VaultFile
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.Dispatchers
@@ -358,6 +360,118 @@ fun AttachOptionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun TimelineSheet(
+    events: List<DocketEvent>,
+    currentMatterId: String,
+    onDelete: (String) -> Unit,
+    onAttach: (DocketEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val now = System.currentTimeMillis()
+    val thisMatterUpcoming = events.filter { it.convId == currentMatterId && it.ts >= now }.sortedBy { it.ts }
+    val thisMatterPast = events.filter { it.convId == currentMatterId && it.ts < now }.sortedByDescending { it.ts }
+    val other = events.filter { it.convId != currentMatterId }.sortedBy { it.ts }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F0B1A),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                "TIMELINE / DOCKET",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 3.sp,
+                style = TextStyle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                    )
+                )
+            )
+            Text("Dates lifted automatically from replies and documents. Ask about it and tap a card to drop it into the chat.", color = Color(0x80FFFFFF), fontSize = 12.sp)
+            if (thisMatterUpcoming.isEmpty() && thisMatterPast.isEmpty() && other.isEmpty()) {
+                Text("No dates captured yet. Send documents or ask about your matter and key dates will be filed here automatically.", color = Color(0xB3FFFFFF), fontSize = 13.sp)
+            }
+            if (thisMatterUpcoming.isNotEmpty()) {
+                Text("UPCOMING", color = Color(0xFF00FFCC), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                DocketList(thisMatterUpcoming, onDelete, onAttach)
+            }
+            if (thisMatterPast.isNotEmpty()) {
+                Text("PAST", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                DocketList(thisMatterPast.take(10), onDelete, onAttach)
+            }
+            if (other.isNotEmpty()) {
+                Text("OTHER MATTERS", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                DocketList(other.take(10), onDelete, onAttach)
+            }
+        }
+    }
+}
+
+@Composable
+fun countdownLabel(ts: Long): String {
+    val days = ((ts - System.currentTimeMillis()) / 86400000L)
+    return when {
+        ts < System.currentTimeMillis() -> "passed"
+        days == 0L -> "today"
+        days == 1L -> "tomorrow"
+        days <= 7L -> "in $days days"
+        days <= 60L -> "in ${(days / 7)} wks"
+        else -> "in ${(days / 30)} mths"
+    }
+}
+
+@Composable
+fun DocketList(events: List<DocketEvent>, onDelete: (String) -> Unit, onAttach: (DocketEvent) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        events.forEach { e ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x14FFFFFF))
+                    .clickable { onAttach(e) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            java.text.SimpleDateFormat("EEE d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(e.ts)),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            countdownLabel(e.ts),
+                            color = if (e.isDeadline) Color(0xFFFF4D6D) else Color(0xFF80DEFF),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(e.description, color = Color(0xB3FFFFFF), fontSize = 11.sp, maxLines = 3)
+                }
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Delete",
+                    tint = Color(0x60FFFFFF),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { onDelete(e.id) }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun VaultSheet(
     files: List<VaultFile>,
     currentMatterId: String,
@@ -590,6 +704,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
     val conversations by viewModel.conversations.collectAsState()
     val vaultFiles by viewModel.vault.collectAsState()
+    val docketEvents by viewModel.docket.collectAsState()
     var openConversationId by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
@@ -632,6 +747,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var showSmsPicker by remember { mutableStateOf(false) }
     var showEmailPicker by remember { mutableStateOf(false) }
     var showVault by remember { mutableStateOf(false) }
+    var showDocket by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
     var attachMenuShown by remember { mutableStateOf(0) }
     LaunchedEffect(showAttachMenu) {
@@ -1094,6 +1210,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             Text("Playing", color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
+                    IconButton(onClick = { showDocket = true }) {
+                        Icon(Icons.Default.EventNote, contentDescription = "Timeline", tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
                     IconButton(onClick = { showVault = true }) {
                         Icon(Icons.Default.Archive, contentDescription = "Case Vault", tint = Color.White, modifier = Modifier.size(22.dp))
                     }
@@ -1339,6 +1458,19 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     pendingDocs.add("SMS thread — ${thread.address}" to thread.text)
                     showSmsPicker = false
                 }
+            )
+        }
+
+        if (showDocket) {
+            TimelineSheet(
+                events = docketEvents,
+                currentMatterId = viewModel.currentMatterId(),
+                onDelete = { viewModel.deleteDocketEvent(it) },
+                onAttach = { e ->
+                    inputText = (inputText + " " + e.description).trim()
+                    showDocket = false
+                },
+                onDismiss = { showDocket = false }
             )
         }
 
