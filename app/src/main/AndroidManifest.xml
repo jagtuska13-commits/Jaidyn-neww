@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -36,6 +37,9 @@
                 <data android:scheme="com.example.jaggedgem" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".DocketReminderReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

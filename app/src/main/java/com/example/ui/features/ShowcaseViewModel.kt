@@ -126,6 +126,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             val combined = (existing + toAdd).sortedBy { it.ts }
             persistDocket(combined)
             _docket.value = combined
+            scheduleNextReminder()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -182,6 +183,30 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
             }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    private fun scheduleNextReminder() {
+        try {
+            val app = getApplication<Application>()
+            val am = app.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            val next = _docket.value
+                .filter { it.isDeadline && it.ts > System.currentTimeMillis() + 3600000L }
+                .minByOrNull { it.ts } ?: return
+            val fireAt = maxOf(next.ts - 86400000L, System.currentTimeMillis() + 60000L)
+            val intent = android.content.Intent(app, com.example.DocketReminderReceiver::class.java).apply {
+                putExtra("description", next.description)
+                putExtra("ts", next.ts)
+            }
+            val pending = android.app.PendingIntent.getBroadcast(
+                app,
+                next.id.hashCode(),
+                intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            am.set(android.app.AlarmManager.RTC_WAKEUP, fireAt, pending)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

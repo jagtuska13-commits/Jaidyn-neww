@@ -9,6 +9,8 @@ import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.content.ContentValues
+import android.provider.MediaStore
 import android.os.Bundle
 import android.util.Base64
 import androidx.activity.ComponentActivity
@@ -55,6 +57,7 @@ import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
@@ -179,6 +182,77 @@ fun AnimatedBlobsBackground() {
             )
         }
     }
+}
+
+fun exportReplyToPdf(context: Context, title: String, text: String) {
+    val cleanTitle = title.replace(Regex("[^\\w\\s-]"), "").trim().take(60).ifBlank { "Stratagem reply" }
+    Thread {
+        try {
+            val doc = android.graphics.pdf.PdfDocument()
+            val pageW = 595
+            val pageH = 842
+            val margin = 46f
+            val textPaint = android.text.TextPaint().apply {
+                color = android.graphics.Color.BLACK
+                textSize = 11f
+                isAntiAlias = true
+            }
+            var pageNo = 1
+            var page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(pageW, pageH, pageNo).create())
+            var canvas = page.canvas
+            val titlePaint = android.text.TextPaint(textPaint).apply { textSize = 14f; isFakeBoldText = true }
+            canvas.drawText(cleanTitle, margin, margin + 14f, titlePaint)
+            var y = margin + 44f
+            val paraWidth = (pageW - 2 * margin).toInt()
+            val paras = text.split("\n")
+            for (para in paras) {
+                val line = para.ifBlank { " " }
+                val layout = android.text.StaticLayout.Builder.obtain(line, 0, line.length, textPaint, paraWidth)
+                    .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+                    .setLineSpacing(3f, 1f)
+                    .build()
+                if (y + layout.height > pageH - margin) {
+                    doc.finishPage(page)
+                    pageNo++
+                    page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(pageW, pageH, pageNo).create())
+                    canvas = page.canvas
+                    y = margin + 20f
+                }
+                canvas.save()
+                canvas.translate(margin, y)
+                layout.draw(canvas)
+                canvas.restore()
+                y += layout.height + 10f
+            }
+            doc.finishPage(page)
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "$cleanTitle.pdf")
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                context.contentResolver.openOutputStream(uri)?.use { doc.writeTo(it) }
+            }
+            doc.close()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                if (uri != null) {
+                    android.widget.Toast.makeText(context, "PDF saved to Downloads", android.widget.Toast.LENGTH_LONG).show()
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/pdf"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(send, "Share reply PDF"))
+                } else {
+                    android.widget.Toast.makeText(context, "Couldn't save the PDF", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(context, "PDF export failed", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }.start()
 }
 
 fun queryDisplayName(context: Context, uri: Uri): String? {
@@ -704,14 +778,31 @@ fun buildMarkdownLite(raw: String): AnnotatedString = buildAnnotatedString {
         }
         if (isBullet) append("\u2022  ")
         var pos = 0
+        val statuteRegex = Regex("(?i)((?:s|sec|section|cl|clause|sch|schedule|reg|rule|art|para)\\.?\\s?\\d+[A-Z]?(?:\\([0-9A-Za-z]+\\))*\\b(?:\\s+[A-Z][a-z]+\\b){0,5}?(?:Act|Code|Regulation|Rules)\\b)?")
+        fun appendSegment(seg: String) {
+            var sp = 0
+            for (mm in statuteRegex.findAll(seg)) {
+                append(seg.substring(sp, mm.range.first))
+                withStyle(SpanStyle(color = Color(0xFF00FFCC), fontWeight = FontWeight.Bold)) {
+                    append(seg.substring(mm.range))
+                }
+                sp = mm.range.last + 1
+            }
+            append(seg.substring(sp))
+        }
         for (m in Regex("\\*\\*(.+?)\\*\\*|__(.+?)__").findAll(l)) {
-            append(l.substring(pos, m.range.first))
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+            appendSegment(l.substring(pos, m.range.first))
+            withStyle(
+                SpanStyle(
+                    fontWeight = FontWeight.Bold,
+                    color = if (statuteRegex.containsMatchIn(l.substring(m.range))) Color(0xFF00FFCC) else androidx.compose.ui.graphics.Color.Unspecified
+                )
+            ) {
                 append(m.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: m.value)
             }
             pos = m.range.last + 1
         }
-        append(l.substring(pos))
+        appendSegment(l.substring(pos))
     }
 }
 
@@ -953,6 +1044,17 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     LaunchedEffect(imeVisible) {
         if (imeVisible && chatHistory.isNotEmpty()) {
@@ -1167,6 +1269,15 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                         tint = Color(0xB3FFFFFF),
                                         modifier = Modifier.size(16.dp).clickable {
                                             clipboard.setText(AnnotatedString(message.text))
+                                        }
+                                    )
+                                    Icon(
+                                        Icons.Default.PictureAsPdf,
+                                        contentDescription = "Export PDF",
+                                        tint = Color(0xB3FFFFFF),
+                                        modifier = Modifier.size(16.dp).clickable {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            exportReplyToPdf(context, chatHistory.getOrNull(0)?.text?.take(40) ?: "Stratagem reply", message.text)
                                         }
                                     )
                                     Icon(
