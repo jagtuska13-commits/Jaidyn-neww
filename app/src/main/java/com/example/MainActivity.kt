@@ -166,7 +166,7 @@ fun AnimatedBlobsBackground() {
 
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(color.copy(alpha = 0.5f), Color.Transparent),
+                    colors = listOf(color.copy(alpha = 0.10f), Color.Transparent),
                     center = Offset(cx, cy),
                     radius = radius
                 ),
@@ -438,6 +438,40 @@ fun EmailPickerSheet(
 fun formatEmailDate(ts: Long): String {
     if (ts == 0L) return ""
     return java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))
+}
+
+@Composable
+fun MarkdownLiteText(raw: String, color: Color = Color.White, fontSize: TextUnit = 15.sp, lineHeight: TextUnit = 22.sp) {
+    val annotated = remember(raw) { buildMarkdownLite(raw) }
+    Text(annotated, color = color, fontSize = fontSize, lineHeight = lineHeight)
+}
+
+fun buildMarkdownLite(raw: String): AnnotatedString = buildAnnotatedString {
+    raw.lines().forEachIndexed { idx, line ->
+        if (idx > 0) append("\n")
+        var l = line.trimEnd()
+        if (l.isBlank()) return@forEachIndexed
+        var isBullet = false
+        val bulletMatch = Regex("^\\s*[-\u2022*+]\\s+").find(l)
+        if (bulletMatch != null) {
+            isBullet = true
+            l = l.removeRange(bulletMatch.range)
+        }
+        val headerMatch = Regex("^#{1,6}\\s+").find(l)
+        if (headerMatch != null) {
+            l = l.removeRange(headerMatch.range).removePrefix("**").removeSuffix("**")
+        }
+        if (isBullet) append("\u2022  ")
+        var pos = 0
+        for (m in Regex("\\*\\*(.+?)\\*\\*|__(.+?)__").findAll(l)) {
+            append(l.substring(pos, m.range.first))
+            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(m.groupValues.drop(1).firstOrNull { it.isNotBlank() } ?: m.value)
+            }
+            pos = m.range.last + 1
+        }
+        append(l.substring(pos))
+    }
 }
 
 fun stripMarkdown(raw: String): String {
@@ -789,6 +823,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 onDismissError = { disputeError = false }
             )
         } else {
+        val imePaddingDp = WindowInsets.ime.getBottom(LocalDensity.current).let { px ->
+            with(LocalDensity.current) { px.toDp() }
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -800,8 +837,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = 116.dp,
-                    bottom = 150.dp
+                    top = 150.dp,
+                    bottom = 168.dp + imePaddingDp
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -841,9 +878,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         }
                     } else {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            val displayText = remember(message.id, message.text) { stripMarkdown(message.text) }
                             if (message.text.isNotBlank()) {
-                                Text(displayText, color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
+                                MarkdownLiteText(raw = message.text)
                             } else {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
                                     StrataLoader()
@@ -884,7 +920,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                         contentDescription = "Copy",
                                         tint = Color(0xB3FFFFFF),
                                         modifier = Modifier.size(16.dp).clickable {
-                                            clipboard.setText(AnnotatedString(displayText))
+                                            clipboard.setText(AnnotatedString(message.text))
                                         }
                                     )
                                     Icon(
@@ -906,8 +942,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(130.dp)
-                    .background(Brush.verticalGradient(listOf(Color(0xFF07030E), Color(0x0007030E))))
+                    .height(158.dp)
+                    .background(Brush.verticalGradient(listOf(Color(0xFF07030E), Color(0xFF07030E), Color(0xB307030E), Color(0x0007030E))))
             ) {}
             Box(
                 modifier = Modifier
@@ -943,6 +979,23 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (playingAudioId != null) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color(0x2EFFFFFF), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
+                                .clickable {
+                                    viewModel.stopSpeaking()
+                                    playingAudioId = null
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = null, tint = Color(0xFFFF4D6D), modifier = Modifier.size(14.dp))
+                            Text("Playing", color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
                     IconButton(onClick = { showDisputes = true }) {
                         Icon(Icons.Default.Balance, contentDescription = "Disputes", tint = Color.White, modifier = Modifier.size(22.dp))
                     }
@@ -965,7 +1018,11 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 10.dp),
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xE60F0B1A), RoundedCornerShape(24.dp))
+                            .border(1.dp, Color(0x2EFFFFFF), RoundedCornerShape(24.dp))
+                            .padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         AnimatedVisibility(visible = attachMenuShown >= 4, enter = scaleIn(initialScale = 0.3f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 380f)) + fadeIn(), exit = shrinkOut() + fadeOut()) {

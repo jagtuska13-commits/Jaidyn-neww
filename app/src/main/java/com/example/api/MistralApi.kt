@@ -12,6 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 
 data class ChatMessagePayload(
     val role: String,
@@ -110,10 +111,10 @@ object MistralApi {
         reasoningEffort: String = "low"
     ): String = withContext(Dispatchers.IO) {
         try {
-            chatStreamOnce(CHAT_MODEL, history, systemInstruction, onDelta, reasoningEffort)
+            retryOnIo { chatStreamOnce(CHAT_MODEL, history, systemInstruction, onDelta, reasoningEffort) }
         } catch (e: Exception) {
             if (isModelAccessError(e) && CHAT_MODEL != FALLBACK_MODEL) {
-                chatStreamOnce(FALLBACK_MODEL, history, systemInstruction, onDelta, reasoningEffort)
+                retryOnIo { chatStreamOnce(FALLBACK_MODEL, history, systemInstruction, onDelta, reasoningEffort) }
             } else {
                 throw e
             }
@@ -126,6 +127,19 @@ object MistralApi {
         val m = e.message ?: return false
         return m.contains("403") || m.contains("404") || m.contains("model_not_found") ||
             m.contains("not allowed") || m.contains("Do not have access")
+    }
+
+    private suspend fun <T> retryOnIo(times: Int = 3, block: suspend () -> T): T {
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (e: java.io.IOException) {
+                attempt++
+                if (attempt >= times) throw e
+                delay(1000L * attempt * attempt)
+            }
+        }
     }
 
     private suspend fun chatStreamOnce(

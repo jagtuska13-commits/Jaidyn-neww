@@ -427,6 +427,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         )
         _chatHistory.value = _chatHistory.value + userMsg
         persistChatHistory()
+        stopSpeaking()
         if (isGenerating) return
         isGenerating = true
         _isLoading.value = true
