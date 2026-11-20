@@ -36,6 +36,12 @@ data class DisputeCase(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+data class ConversationMeta(
+    val id: String,
+    val title: String,
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
 data class ChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
@@ -50,8 +56,19 @@ data class ChatMessage(
 class ShowcaseViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs: SharedPreferences = application.getSharedPreferences("jaggedgem_prefs", Context.MODE_PRIVATE)
 
-    private val _chatHistory = MutableStateFlow(loadChatHistory())
+    private val _chatHistory = MutableStateFlow(emptyList<ChatMessage>())
     val chatHistory: StateFlow<List<ChatMessage>> = _chatHistory.asStateFlow()
+
+    private val _conversations = MutableStateFlow(loadConversations())
+    val conversations: StateFlow<List<ConversationMeta>> = _conversations.asStateFlow()
+
+    private var currentConversationId: String = _conversations.value.firstOrNull()?.id ?: UUID.randomUUID().toString()
+
+    init {
+        if (_conversations.value.isNotEmpty()) {
+            _chatHistory.value = loadConversationMessages(currentConversationId)
+        }
+    }
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -656,6 +673,38 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun newConversation() {
+        persistChatHistory()
+        currentConversationId = UUID.randomUUID().toString()
+        _chatHistory.value = emptyList()
+        persistChatHistory()
+    }
+
+    fun openConversation(id: String) {
+        if (id == currentConversationId) return
+        persistChatHistory()
+        currentConversationId = id
+        _chatHistory.value = loadConversationMessages(id)
+    }
+
+    fun deleteConversation(id: String) {
+        try {
+            val convs = JSONArray(prefs.getString(PK_CONVERSATIONS, "[]") ?: "[]")
+            val kept = JSONArray()
+            for (i in 0 until convs.length()) {
+                if (convs.getJSONObject(i).optString("id") != id) kept.put(convs.getJSONObject(i))
+            }
+            prefs.edit().putString(PK_CONVERSATIONS, kept.toString()).apply()
+            _conversations.value = loadConversations()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        if (id == currentConversationId) {
+            currentConversationId = UUID.randomUUID().toString()
+            _chatHistory.value = emptyList()
+        }
+    }
+
     fun stopSpeaking() {
         try {
             mediaPlayer?.stop()
@@ -809,36 +858,31 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putString(PK_DISPUTES, arr.toString()).apply()
     }
 
-    private fun persistChatHistory() {
-        try {
-            val arr = JSONArray()
-            _chatHistory.value.takeLast(100).forEach { m ->
-                val o = JSONObject()
-                    .put("id", m.id)
-                    .put("text", m.text.take(6000))
-                    .put("isUser", m.isUser)
-                if (m.documentName != null) {
-                    o.put("documentName", m.documentName)
-                    o.put("documentText", m.documentText?.take(8000) ?: "")
-                }
-                arr.put(o)
+    private fun messagesToJson(): JSONArray {
+        val arr = JSONArray()
+        _chatHistory.value.takeLast(100).forEach { m ->
+            val o = JSONObject()
+                .put("id", m.id)
+                .put("text", m.text.take(6000))
+                .put("isUser", m.isUser)
+            if (m.documentName != null) {
+                o.put("documentName", m.documentName)
+                o.put("documentText", m.documentText?.take(8000) ?: "")
             }
-            prefs.edit().putString(PK_CHAT_HISTORY, arr.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
+            arr.put(o)
         }
+        return arr
     }
 
-    private fun loadChatHistory(): List<ChatMessage> {
-        return try {
-            val raw = prefs.getString(PK_CHAT_HISTORY, null) ?: return emptyList()
-            val arr = JSONArray(raw)
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.getJSONObject(i)
-                val text = o.optString("text")
-                val docName = if (o.has("documentName")) o.getString("documentName") else null
-                val docText = if (o.has("documentText")) o.optString("documentText") else null
-                if (text.isBlank() && docName == null) return@mapNotNull null
+    private fun parseMessages(arr: JSONArray): List<ChatMessage> {
+        val out = mutableListOf<ChatMessage>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val text = o.optString("text")
+            val docName = if (o.has("documentName")) o.getString("documentName") else null
+            val docText = if (o.has("documentText")) o.optString("documentText") else null
+            if (text.isBlank() && docName == null) continue
+            out.add(
                 ChatMessage(
                     id = o.getString("id"),
                     text = text,
@@ -846,7 +890,87 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     documentName = docName,
                     documentText = docText
                 )
+            )
+        }
+        return out
+    }
+
+    private fun persistChatHistory() {
+        try {
+            val msgs = messagesToJson()
+            val now = System.currentTimeMillis()
+            val title = _chatHistory.value.firstOrNull { it.isUser && it.text.isNotBlank() }?.text?.take(60)?.trim()
+                ?: (_conversations.value.firstOrNull { it.id == currentConversationId }?.title ?: "")
+            val convs = JSONArray(prefs.getString(PK_CONVERSATIONS, "[]") ?: "[]")
+            var found = false
+            for (i in 0 until convs.length()) {
+                val c = convs.getJSONObject(i)
+                if (c.optString("id") == currentConversationId) {
+                    c.put("messages", msgs).put("updatedAt", now).put("title", title)
+                    found = true
+                }
             }
+            if (!found) {
+                convs.put(
+                    JSONObject()
+                        .put("id", currentConversationId)
+                        .put("title", title)
+                        .put("updatedAt", now)
+                        .put("messages", msgs)
+                )
+            }
+            prefs.edit().putString(PK_CONVERSATIONS, convs.toString()).apply()
+            _conversations.value = loadConversations()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadConversations(): List<ConversationMeta> {
+        val out = mutableListOf<ConversationMeta>()
+        try {
+            val convs = JSONArray(prefs.getString(PK_CONVERSATIONS, "[]") ?: "[]")
+            for (i in 0 until convs.length()) {
+                val c = convs.getJSONObject(i)
+                out.add(
+                    ConversationMeta(
+                        id = c.getString("id"),
+                        title = c.optString("title").ifBlank { "Chat" },
+                        updatedAt = c.optLong("updatedAt", 0L)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        if (out.isEmpty()) {
+            val legacy = prefs.getString(PK_CHAT_HISTORY, null)
+            if (!legacy.isNullOrBlank()) {
+                try {
+                    val id = UUID.randomUUID().toString()
+                    val msgs = JSONArray(legacy)
+                    val meta = JSONObject()
+                        .put("id", id)
+                        .put("title", parseMessages(msgs).firstOrNull { it.isUser && it.text.isNotBlank() }?.text?.take(60)?.trim() ?: "Chat")
+                        .put("updatedAt", System.currentTimeMillis())
+                        .put("messages", msgs)
+                    out.add(ConversationMeta(id = id, title = meta.optString("title"), updatedAt = System.currentTimeMillis()))
+                    prefs.edit().putString(PK_CONVERSATIONS, JSONArray().put(meta).toString()).apply()
+                } catch (e: Exception) {
+                }
+            }
+        }
+        return out.sortedByDescending { it.updatedAt }
+    }
+
+    private fun loadConversationMessages(id: String): List<ChatMessage> {
+        return try {
+            val convs = JSONArray(prefs.getString(PK_CONVERSATIONS, "[]") ?: "[]")
+            for (i in 0 until convs.length()) {
+                val c = convs.getJSONObject(i)
+                if (c.optString("id") == id) return parseMessages(c.optJSONArray("messages") ?: JSONArray())
+            }
+            emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -895,6 +1019,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_CLONED_VOICE = "cloned_voice_base64"
         private const val PK_DISPUTES = "disputes_json"
         private const val PK_CHAT_HISTORY = "chat_history_json"
+        private const val PK_CONVERSATIONS = "conversations_json"
         private const val PK_LIVE_SEARCH = "use_live_search"
         private const val PK_MEMORY_DIGEST = "memory_digest"
         private const val PK_MEMORY_LOG = "memory_log"

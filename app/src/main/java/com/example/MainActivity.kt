@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Flag
@@ -458,6 +459,10 @@ fun stripMarkdown(raw: String): String {
 @Composable
 fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
+    val conversations by viewModel.conversations.collectAsState()
+    var openConversationId by remember { mutableStateOf<String?>(null) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
     val isLoading by viewModel.isLoading.collectAsState()
     val isTranscribing by viewModel.isTranscribing.collectAsState()
     val isReadingDocState by viewModel.isReadingDoc.collectAsState()
@@ -683,6 +688,82 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         micAmplitude = 0f
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = Color(0xF20F0B1A),
+                windowInsets = WindowInsets(0.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 48.dp, bottom = 32.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "HISTORY",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 3.sp,
+                        style = TextStyle(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                            )
+                        )
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(Color(0xFF00FFCC), Color(0xFF0099FF))), RoundedCornerShape(16.dp))
+                            .clickable {
+                                viewModel.newConversation()
+                                drawerScope.launch { drawerState.close() }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("NEW CHAT", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 12.dp))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    if (conversations.isEmpty()) {
+                        Text("No conversations yet.", color = Color(0x80FFFFFF), fontSize = 13.sp)
+                    }
+                    conversations.forEach { c ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (c.id == openConversationId) Color(0x26FFFFFF) else Color.Transparent)
+                                .clickable {
+                                    openConversationId = c.id
+                                    viewModel.openConversation(c.id)
+                                    drawerScope.launch { drawerState.close() }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(c.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                                Text(formatEmailDate(c.updatedAt), color = Color(0x60FFFFFF), fontSize = 10.sp)
+                            }
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Delete",
+                                tint = Color(0x60FFFFFF),
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable { viewModel.deleteConversation(c.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    ) {
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedBlobsBackground()
 
@@ -845,17 +926,22 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "STRATAGEM",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 3.sp,
-                    style = TextStyle(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { drawerScope.launch { drawerState.open() } }) {
+                        Icon(Icons.Default.History, contentDescription = "History", tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
+                    Text(
+                        "STRATAGEM",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 3.sp,
+                        style = TextStyle(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                            )
                         )
                     )
-                )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { showDisputes = true }) {
                         Icon(Icons.Default.Balance, contentDescription = "Disputes", tint = Color.White, modifier = Modifier.size(22.dp))
@@ -1435,6 +1521,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
     }
 }
 
