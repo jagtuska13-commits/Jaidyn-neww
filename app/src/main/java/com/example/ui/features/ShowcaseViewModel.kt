@@ -36,6 +36,14 @@ data class DisputeCase(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+data class VaultFile(
+    val id: String,
+    val name: String,
+    val text: String,
+    val savedAt: Long,
+    val convId: String
+)
+
 data class ConversationMeta(
     val id: String,
     val title: String,
@@ -67,6 +75,69 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
     init {
         if (_conversations.value.isNotEmpty()) {
             _chatHistory.value = loadConversationMessages(currentConversationId)
+        }
+    }
+
+    private val _vault = MutableStateFlow(loadVault())
+    val vault: StateFlow<List<VaultFile>> = _vault.asStateFlow()
+
+    fun currentMatterId(): String = currentConversationId
+
+    fun saveToVault(name: String, text: String) {
+        try {
+            val file = VaultFile(
+                id = UUID.randomUUID().toString(),
+                name = name,
+                text = text.take(15000),
+                savedAt = System.currentTimeMillis(),
+                convId = currentConversationId
+            )
+            val arr = JSONArray(prefs.getString(PK_VAULT, "[]") ?: "[]")
+            arr.put(
+                JSONObject()
+                    .put("id", file.id)
+                    .put("name", file.name)
+                    .put("text", file.text)
+                    .put("savedAt", file.savedAt)
+                    .put("convId", file.convId)
+            )
+            while (arr.length() > 100) arr.remove(0)
+            prefs.edit().putString(PK_VAULT, arr.toString()).apply()
+            _vault.value = loadVault()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun deleteVaultFile(id: String) {
+        try {
+            val arr = JSONArray(prefs.getString(PK_VAULT, "[]") ?: "[]")
+            val kept = JSONArray()
+            for (i in 0 until arr.length()) {
+                if (arr.getJSONObject(i).optString("id") != id) kept.put(arr.getJSONObject(i))
+            }
+            prefs.edit().putString(PK_VAULT, kept.toString()).apply()
+            _vault.value = loadVault()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun loadVault(): List<VaultFile> {
+        return try {
+            val arr = JSONArray(prefs.getString(PK_VAULT, "[]") ?: "[]")
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                VaultFile(
+                    id = o.getString("id"),
+                    name = o.optString("name", "document"),
+                    text = o.optString("text"),
+                    savedAt = o.optLong("savedAt", 0L),
+                    convId = o.optString("convId", "")
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -602,6 +673,13 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
                     _reported.value.takeLast(10).joinToString("\n---\n") { it.second }
             )
         }
+        val onFile = _vault.value.filter { it.convId == currentConversationId }
+        if (onFile.isNotEmpty()) {
+            parts.add(
+                "Documents already on file for this matter: " + onFile.joinToString(", ") { it.name } + ". " +
+                    "The user can re-attach any of them instantly; if you need a document's contents and it has not been attached in this conversation, ask them to attach it from the vault."
+            )
+        }
         if (_jurisdiction.value.isNotBlank()) {
             parts.add("The user's jurisdiction is: ${_jurisdiction.value.trim()}. Apply the law of this jurisdiction unless the document or question clearly concerns another one.")
         }
@@ -1021,6 +1099,7 @@ class ShowcaseViewModel(application: Application) : AndroidViewModel(application
         private const val PK_DISPUTES = "disputes_json"
         private const val PK_CHAT_HISTORY = "chat_history_json"
         private const val PK_CONVERSATIONS = "conversations_json"
+        private const val PK_VAULT = "case_vault_json"
         private const val PK_LIVE_SEARCH = "use_live_search"
         private const val PK_MEMORY_DIGEST = "memory_digest"
         private const val PK_MEMORY_LOG = "memory_log"

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Balance
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Description
@@ -107,6 +108,7 @@ import com.example.api.VoiceRecorder
 import com.example.ui.features.DisputeCase
 import com.example.ui.features.DisputeStatus
 import com.example.ui.features.ShowcaseViewModel
+import com.example.ui.features.VaultFile
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -356,6 +358,99 @@ fun AttachOptionButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun VaultSheet(
+    files: List<VaultFile>,
+    currentMatterId: String,
+    onDelete: (String) -> Unit,
+    onAttach: (VaultFile) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val thisMatter = files.filter { it.convId == currentMatterId }.sortedByDescending { it.savedAt }
+    val other = files.filter { it.convId != currentMatterId }.sortedByDescending { it.savedAt }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0F0B1A),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                "CASE VAULT",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 3.sp,
+                style = TextStyle(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
+                    )
+                )
+            )
+            Text("Every document you upload is filed here. Attach any file to the chat instantly.", color = Color(0x80FFFFFF), fontSize = 12.sp)
+            if (thisMatter.isEmpty() && other.isEmpty()) {
+                Text("No documents on file yet. Upload one with the + menu and it will be filed automatically.", color = Color(0xB3FFFFFF), fontSize = 13.sp)
+            }
+            if (thisMatter.isNotEmpty()) {
+                Text("THIS MATTER", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                VaultFileList(thisMatter, onDelete, onAttach)
+            }
+            if (other.isNotEmpty()) {
+                Text("OTHER MATTERS", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                VaultFileList(other, onDelete, onAttach)
+            }
+        }
+    }
+}
+
+@Composable
+fun VaultFileList(files: List<VaultFile>, onDelete: (String) -> Unit, onAttach: (VaultFile) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        files.forEach { f ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x14FFFFFF))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(f.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text("${formatEmailDate(f.savedAt)}  \u00b7  ${f.text.length} chars", color = Color(0x60FFFFFF), fontSize = 10.sp)
+                }
+                Text(
+                    "ATTACH",
+                    color = Color(0xFF00FFCC),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0x1400FFCC), RoundedCornerShape(10.dp))
+                        .clickable { onAttach(f) }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Delete",
+                    tint = Color(0x60FFFFFF),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { onDelete(f.id) }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun EmailPickerSheet(
     connectedLabel: String?,
     load: suspend () -> List<EmailInbox.EmailThread>,
@@ -494,6 +589,7 @@ fun stripMarkdown(raw: String): String {
 fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     val chatHistory by viewModel.chatHistory.collectAsState()
     val conversations by viewModel.conversations.collectAsState()
+    val vaultFiles by viewModel.vault.collectAsState()
     var openConversationId by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
@@ -535,6 +631,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var docError by remember { mutableStateOf(false) }
     var showSmsPicker by remember { mutableStateOf(false) }
     var showEmailPicker by remember { mutableStateOf(false) }
+    var showVault by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
     var attachMenuShown by remember { mutableStateOf(0) }
     LaunchedEffect(showAttachMenu) {
@@ -647,6 +744,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                                     if (text != null) {
                                         pendingDocs.add(name to text)
+                                        viewModel.saveToVault(name, text)
                                     } else {
                                         docError = true
                                     }
@@ -996,6 +1094,9 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             Text("Playing", color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
+                    IconButton(onClick = { showVault = true }) {
+                        Icon(Icons.Default.Archive, contentDescription = "Case Vault", tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
                     IconButton(onClick = { showDisputes = true }) {
                         Icon(Icons.Default.Balance, contentDescription = "Disputes", tint = Color.White, modifier = Modifier.size(22.dp))
                     }
@@ -1238,6 +1339,19 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                     pendingDocs.add("SMS thread — ${thread.address}" to thread.text)
                     showSmsPicker = false
                 }
+            )
+        }
+
+        if (showVault) {
+            VaultSheet(
+                files = vaultFiles,
+                currentMatterId = viewModel.currentMatterId(),
+                onDelete = { viewModel.deleteVaultFile(it) },
+                onAttach = { f ->
+                    pendingDocs.add(f.name to f.text)
+                    showVault = false
+                },
+                onDismiss = { showVault = false }
             )
         }
 
