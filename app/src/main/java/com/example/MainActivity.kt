@@ -229,7 +229,7 @@ data class SmsThread(
     val text: String
 )
 
-fun loadSmsThreads(context: Context, maxThreads: Int = 30, perThread: Int = 15): List<SmsThread> {
+fun loadSmsThreads(context: Context, maxThreads: Int = 500, perThread: Int = 15): List<SmsThread> {
     val map = LinkedHashMap<String, MutableList<Pair<Long, String>>>()
     try {
         val cursor = context.contentResolver.query(
@@ -245,7 +245,7 @@ fun loadSmsThreads(context: Context, maxThreads: Int = 30, perThread: Int = 15):
                 val body = c.getString(1) ?: ""
                 val date = c.getLong(2)
                 map.getOrPut(addr) { mutableListOf() }.add(date to body)
-                if (map.size > maxThreads * 3) break
+                if (map.size > maxThreads) break
             }
         }
     } catch (e: Exception) {
@@ -269,6 +269,7 @@ fun loadSmsThreads(context: Context, maxThreads: Int = 30, perThread: Int = 15):
 @Composable
 fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
     var threads by remember { mutableStateOf<List<SmsThread>?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         threads = loadSmsThreads(context)
@@ -298,11 +299,35 @@ fun SmsPickerSheet(onDismiss: () -> Unit, onPick: (SmsThread) -> Unit) {
             )
             val list = threads
             if (list == null) {
-                Text("Loading messages...", color = Color(0xB3FFFFFF), fontSize = 14.sp)
+                Text("Scanning your whole inbox...", color = Color(0xB3FFFFFF), fontSize = 14.sp)
             } else if (list.isEmpty()) {
                 Text("No messages found. Make sure SMS permission is granted and there are SMS conversations on this phone.", color = Color(0xB3FFFFFF), fontSize = 14.sp)
             } else {
-                list.take(25).forEach { t ->
+                val query = searchQuery.trim().lowercase()
+                val filtered = if (query.isBlank()) list else list.filter {
+                    it.address.lowercase().contains(query) || it.snippet.lowercase().contains(query)
+                }
+                if (query.isBlank()) {
+                    Text("All ${list.size} conversations on this phone", color = Color(0x60FFFFFF), fontSize = 11.sp)
+                } else if (filtered.isEmpty()) {
+                    Text("No conversations match \"$searchQuery\"", color = Color(0xB3FFFFFF), fontSize = 13.sp)
+                }
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x1AFFFFFF), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (searchQuery.isEmpty()) Text("Search any number, name or word...", color = Color(0x60FFFFFF), fontSize = 14.sp)
+                            inner()
+                        }
+                    }
+                )
+                filtered.take(80).forEach { t ->
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
