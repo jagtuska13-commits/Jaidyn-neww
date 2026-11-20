@@ -2481,11 +2481,11 @@ fun StratagemScreensaver(onDismiss: () -> Unit) {
         ) {
             Box(
                 modifier = Modifier.graphicsLayer {
-                    scaleX = 2.6f
-                    scaleY = 2.6f
+                    scaleX = 4f
+                    scaleY = 4f
                 }
             ) {
-                StrataLoader()
+                StrataLoader(showStatus = false)
             }
             Text("Touch to return to your conversation", color = Color(0x60FFFFFF), fontSize = 12.sp, letterSpacing = 2.sp)
         }
@@ -2493,7 +2493,7 @@ fun StratagemScreensaver(onDismiss: () -> Unit) {
 }
 
 @Composable
-fun StrataLoader() {
+fun StrataLoader(showStatus: Boolean = true) {
     val transition = rememberInfiniteTransition(label = "strata")
     val morph by transition.animateFloat(
         initialValue = 0f,
@@ -2532,7 +2532,7 @@ fun StrataLoader() {
         2 -> "Preparing your answer"
         else -> "Verifying sources"
     }
-    val words = status.split(" ")
+    val words = if (showStatus) status.split(" ") else emptyList()
 
     Row(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
