@@ -778,7 +778,7 @@ fun buildMarkdownLite(raw: String): AnnotatedString = buildAnnotatedString {
         }
         if (isBullet) append("\u2022  ")
         var pos = 0
-        val statuteRegex = Regex("(?i)((?:s|sec|section|cl|clause|sch|schedule|reg|rule|art|para)\\.?\\s?\\d+[A-Z]?(?:\\([0-9A-Za-z]+\\))*\\b(?:\\s+[A-Z][a-z]+\\b){0,5}?(?:Act|Code|Regulation|Rules)\\b)?")
+        val statuteRegex = Regex("(?i)\\b(?:s|sec|section|cl|clause|sch|schedule|reg|rule|art|para)\\.? ?\\d+[A-Z]?(?:\\([0-9A-Za-z]+\\))*\\b|\\b[A-Z][a-z]+(?:\\s+[A-Z][a-z]+){0,4}\\s+(?:Act|Code|Regulation|Rules)s?\\b")
         fun appendSegment(seg: String) {
             var sp = 0
             for (mm in statuteRegex.findAll(seg)) {
