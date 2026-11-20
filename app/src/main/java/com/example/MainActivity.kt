@@ -37,6 +37,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -870,6 +871,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
     var showSmsPicker by remember { mutableStateOf(false) }
     var showEmailPicker by remember { mutableStateOf(false) }
     var showVault by remember { mutableStateOf(false) }
+    var showSaver by remember { mutableStateOf(false) }
+    var lastInteraction by remember { mutableStateOf(System.currentTimeMillis()) }
     var showDocket by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
     var attachMenuShown by remember { mutableStateOf(0) }
@@ -1055,6 +1058,15 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5000L)
+            if (!showSaver && System.currentTimeMillis() - lastInteraction > 45000L) {
+                showSaver = true
+            }
+        }
+    }
+
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     LaunchedEffect(imeVisible) {
         if (imeVisible && chatHistory.isNotEmpty()) {
@@ -1146,7 +1158,14 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             }
         }
     ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent()
+                lastInteraction = System.currentTimeMillis()
+            }
+        }
+    }) {
         AnimatedBlobsBackground()
 
         AnimatedVisibility(
@@ -1319,22 +1338,17 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { drawerScope.launch { drawerState.open() } }) {
-                        Icon(Icons.Default.History, contentDescription = "History", tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                    Text(
-                        "STRATAGEM",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 3.sp,
-                        style = TextStyle(
-                            brush = Brush.linearGradient(
-                                colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
-                            )
+                Text(
+                    "STRATAGEM",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 3.sp,
+                    style = TextStyle(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
                         )
                     )
-                }
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (playingAudioId != null) {
                         Row(
@@ -1353,17 +1367,8 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                             Text("Playing", color = Color(0xB3FFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
-                    IconButton(onClick = { showDocket = true }) {
-                        Icon(Icons.Default.EventNote, contentDescription = "Timeline", tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = { showVault = true }) {
-                        Icon(Icons.Default.Archive, contentDescription = "Case Vault", tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = { showDisputes = true }) {
-                        Icon(Icons.Default.Balance, contentDescription = "Disputes", tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                    IconButton(onClick = { showSettingsPanel = !showSettingsPanel }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(22.dp))
+                    IconButton(onClick = { showSettingsPanel = !showSettingsPanel }, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(28.dp))
                     }
                 }
             }
@@ -1654,6 +1659,13 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             )
         }
 
+        if (showSaver) {
+            StratagemScreensaver {
+                showSaver = false
+                lastInteraction = System.currentTimeMillis()
+            }
+        }
+
         if (showSettingsPanel) {
             ModalBottomSheet(
                 onDismissRequest = { showSettingsPanel = false },
@@ -1667,6 +1679,12 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         .padding(bottom = 32.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    Text("TOOLS", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    SettingsToolRow(Icons.Default.History, "HISTORY & CONVERSATIONS") { showSettingsPanel = false; drawerScope.launch { drawerState.open() } }
+                    SettingsToolRow(Icons.Default.EventNote, "TIMELINE / DOCKET") { showSettingsPanel = false; showDocket = true }
+                    SettingsToolRow(Icons.Default.Archive, "CASE VAULT") { showSettingsPanel = false; showVault = true }
+                    SettingsToolRow(Icons.Default.Balance, "DISPUTE LETTERS") { showSettingsPanel = false; showDisputes = true }
+
                     Text(
                         "STRATAGEM v" + BuildConfig.VERSION_NAME,
                         color = Color(0x60FFFFFF),
@@ -1968,6 +1986,23 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
             }
         }
     }
+    }
+}
+
+@Composable
+fun SettingsToolRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0x1AFFFFFF), RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = label, tint = Color(0xFF80DEFF), modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -2427,6 +2462,32 @@ fun StratagemSplash() {
                     color = Color(0x99FFFFFF)
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun StratagemScreensaver(onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07030E))
+            .clickable { onDismiss() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(28.dp)
+        ) {
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    scaleX = 2.6f
+                    scaleY = 2.6f
+                }
+            ) {
+                StrataLoader()
+            }
+            Text("Touch to return to your conversation", color = Color(0x60FFFFFF), fontSize = 12.sp, letterSpacing = 2.sp)
         }
     }
 }
