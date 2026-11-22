@@ -29,6 +29,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkOut
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
@@ -101,6 +102,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -1667,325 +1669,449 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
         }
 
         if (showSettingsPanel) {
+            val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
                 onDismissRequest = { showSettingsPanel = false },
+                sheetState = settingsSheetState,
                 containerColor = Color(0xFF0F0B1A),
+                dragHandle = {
+                    Box(
+                        Modifier
+                            .padding(top = 10.dp, bottom = 4.dp)
+                            .width(44.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0x33FFFFFF))
+                    )
+                },
                 shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 24.dp)
                         .padding(bottom = 32.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Text("TOOLS", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    SettingsToolRow(Icons.Default.History, "HISTORY & CONVERSATIONS") { showSettingsPanel = false; drawerScope.launch { drawerState.open() } }
-                    SettingsToolRow(Icons.Default.EventNote, "TIMELINE / DOCKET") { showSettingsPanel = false; showDocket = true }
-                    SettingsToolRow(Icons.Default.Archive, "CASE VAULT") { showSettingsPanel = false; showVault = true }
-                    SettingsToolRow(Icons.Default.Balance, "DISPUTE LETTERS") { showSettingsPanel = false; showDisputes = true }
-
                     Text(
-                        "STRATAGEM v" + BuildConfig.VERSION_NAME,
-                        color = Color(0x60FFFFFF),
-                        fontSize = 11.sp,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        "PERSONA & PROFILE",
-                        fontSize = 14.sp,
+                        "SETTINGS",
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 2.sp,
+                        letterSpacing = 3.sp,
                         style = TextStyle(
                             brush = Brush.linearGradient(
                                 colors = listOf(Color(0xFF00FFCC), Color(0xFF80DEFF), Color(0xFFFF007F))
                             )
                         )
                     )
+                    SettingsHint("Everything saves instantly - there is no save button. Pick a section below, or open START HERE if you are unsure. Swipe down or tap outside to close.")
 
-                    DrawerTextField(
-                        label = "AI name",
-                        value = personaName,
-                        onValueChange = { viewModel.updatePersonaName(it) },
-                        placeholder = "e.g. Gem"
-                    )
+                    SettingsHelpCard()
 
-                    DrawerTextField(
-                        label = "CUSTOM INSTRUCTIONS (how you want it to act)",
-                        value = personaText,
-                        onValueChange = { viewModel.updatePersonaText(it) },
-                        placeholder = "Inject personality: witty, caring, sarcastic...",
-                        minHeight = 72.dp
-                    )
+                    SettingsSection(0) {
+                        SettingsSectionTitle("TOOLS")
+                        SettingsToolRow(Icons.Default.History, "HISTORY & CONVERSATIONS") { showSettingsPanel = false; drawerScope.launch { drawerState.open() } }
+                        SettingsToolRow(Icons.Default.EventNote, "TIMELINE / DOCKET") { showSettingsPanel = false; showDocket = true }
+                        SettingsToolRow(Icons.Default.Archive, "CASE VAULT") { showSettingsPanel = false; showVault = true }
+                        SettingsToolRow(Icons.Default.Balance, "DISPUTE LETTERS") { showSettingsPanel = false; showDisputes = true }
+                        SettingsHint("Jump straight to your past chats, your matter timeline, saved case files, or drafted letters.")
+                    }
 
-                    DrawerTextField(
-                        label = "Your name",
-                        value = userName,
-                        onValueChange = { viewModel.updateUserName(it) },
-                        placeholder = "e.g. Alex"
-                    )
+                    SettingsSection(1) {
+                        SettingsSectionTitle("PERSONA & PROFILE")
+                        SettingsCard {
+                            DrawerTextField(
+                                label = "AI name",
+                                value = personaName,
+                                onValueChange = { viewModel.updatePersonaName(it) },
+                                placeholder = "e.g. Gem",
+                                hint = "What the assistant calls itself. Try 'Gem' or your firm's name."
+                            )
+                            DrawerTextField(
+                                label = "CUSTOM INSTRUCTIONS (how you want it to act)",
+                                value = personaText,
+                                onValueChange = { viewModel.updatePersonaText(it) },
+                                placeholder = "Inject personality: witty, caring, sarcastic...",
+                                minHeight = 72.dp,
+                                hint = "Examples: 'be witty but precise', 'no legalese', 'always end with my next step'. Leave blank for a balanced default."
+                            )
+                            DrawerTextField(
+                                label = "Your name",
+                                value = userName,
+                                onValueChange = { viewModel.updateUserName(it) },
+                                placeholder = "e.g. Alex",
+                                hint = "So replies address you personally instead of generically."
+                            )
+                            DrawerTextField(
+                                label = "About you",
+                                value = userAbout,
+                                onValueChange = { viewModel.updateUserAbout(it) },
+                                placeholder = "Tell the AI who you are: interests, job, style...",
+                                minHeight = 72.dp,
+                                hint = "Context makes replies sharper: your job, situation, what you are working on."
+                            )
+                            DrawerTextField(
+                                label = "YOUR JURISDICTION",
+                                value = jurisdiction,
+                                onValueChange = { viewModel.updateJurisdiction(it) },
+                                placeholder = "e.g. New South Wales, Australia / California, USA",
+                                minHeight = 52.dp,
+                                hint = "Replies cite the law that applies where you live. Update it if you move."
+                            )
+                        }
+                    }
 
-                    DrawerTextField(
-                        label = "About you",
-                        value = userAbout,
-                        onValueChange = { viewModel.updateUserAbout(it) },
-                        placeholder = "Tell the AI who you are: interests, job, style...",
-                        minHeight = 72.dp
-                    )
-
-                    DrawerTextField(
-                        label = "YOUR JURISDICTION",
-                        value = jurisdiction,
-                        onValueChange = { viewModel.updateJurisdiction(it) },
-                        placeholder = "e.g. New South Wales, Australia / California, USA",
-                        minHeight = 52.dp
-                    )
-
-                    Text("EMAIL INTEGRATION", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    if (gmailAccountEmail.isNotBlank()) {
-                        Text(
-                            "Signed in to Gmail as $gmailAccountEmail",
-                            color = Color(0xFF00FFCC),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            "SIGN OUT",
-                            color = Color(0xFFFF4D6D),
-                            fontSize = 12.sp,
-                            modifier = Modifier.clickable { viewModel.signOutGmail() }
-                        )
-                    } else {
-                        DrawerTextField(
-                            label = "GOOGLE CLIENT ID",
-                            value = googleClientId,
-                            onValueChange = { viewModel.updateGoogleClientId(it) },
-                            placeholder = "From Google Cloud Console (one-time)"
-                        )
-                        DrawerTextField(
-                            label = "GOOGLE CLIENT SECRET",
-                            value = googleClientSecret,
-                            onValueChange = { viewModel.updateGoogleClientSecret(it) },
-                            placeholder = "From Google Cloud Console (one-time)",
-                            mask = true
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(
-                                    Brush.linearGradient(listOf(Color(0xFF00FFCC), Color(0xFF0099FF))),
-                                    RoundedCornerShape(16.dp)
+                    SettingsSection(2) {
+                        SettingsSectionTitle("EMAIL INTEGRATION")
+                        if (gmailAccountEmail.isNotBlank()) {
+                            SettingsCard {
+                                Text(
+                                    "Signed in to Gmail as $gmailAccountEmail",
+                                    color = Color(0xFF00FFCC),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
-                                .clickable {
-                                    viewModel.prepareGoogleSignIn()?.let { url ->
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                SettingsHint("Your inbox button now reads this account. Sign out below to switch accounts.")
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0x1FFF4D6D), RoundedCornerShape(12.dp))
+                                        .clickable { viewModel.signOutGmail() }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = null, tint = Color(0xFFFF4D6D), modifier = Modifier.size(14.dp))
+                                    Text("SIGN OUT OF GMAIL", color = Color(0xFFFF8FA3), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            SettingsCard {
+                                DrawerTextField(
+                                    label = "GOOGLE CLIENT ID",
+                                    value = googleClientId,
+                                    onValueChange = { viewModel.updateGoogleClientId(it) },
+                                    placeholder = "From Google Cloud Console (one-time)",
+                                    hint = "Step 1: console.cloud.google.com > APIs & Services > Credentials > Create OAuth Client ID. Copy the ID here."
+                                )
+                                DrawerTextField(
+                                    label = "GOOGLE CLIENT SECRET",
+                                    value = googleClientSecret,
+                                    onValueChange = { viewModel.updateGoogleClientSecret(it) },
+                                    placeholder = "From Google Cloud Console (one-time)",
+                                    mask = true,
+                                    hint = "Step 2: copy the client secret from the same Credentials page."
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(
+                                            Brush.linearGradient(listOf(Color(0xFF00FFCC), Color(0xFF0099FF))),
+                                            RoundedCornerShape(16.dp)
+                                        )
+                                        .clickable {
+                                            viewModel.prepareGoogleSignIn()?.let { url ->
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "SIGN IN WITH GOOGLE",
+                                        color = Color.Black,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(vertical = 12.dp)
+                                    )
+                                }
+                                SettingsHint("Step 3: tap the button, approve in the browser, done - one time only. No passwords needed. Afterwards the email button reads your Gmail.")
+                            }
+                        }
+                        SettingsSectionTitle("OTHER PROVIDERS (IMAP)")
+                        SettingsCard {
+                            DrawerTextField(
+                                label = "EMAIL ADDRESS",
+                                value = emailAddress,
+                                onValueChange = { viewModel.updateEmailAddress(it) },
+                                placeholder = "you@outlook.com, yahoo, icloud..."
+                            )
+                            DrawerTextField(
+                                label = "IMAP PASSWORD / APP PASSWORD",
+                                value = emailPassword,
+                                onValueChange = { viewModel.updateEmailPassword(it) },
+                                placeholder = "Your email or app password",
+                                mask = true,
+                                hint = "Most providers need an App Password, not your normal one. Gmail: Google Account > Security > 2-Step Verification on > App Passwords. Outlook/Yahoo: your account security page."
+                            )
+                            DrawerTextField(
+                                label = "IMAP HOST (OPTIONAL)",
+                                value = emailHost,
+                                onValueChange = { viewModel.updateEmailHost(it) },
+                                placeholder = "Auto: Gmail, Outlook, Yahoo, iCloud",
+                                hint = "Leave blank - it is detected from your address. Only fill it for unusual providers."
+                            )
+                            SettingsHint("Email setup is optional. The app works fully without it.")
+                        }
+                    }
+
+                    SettingsSection(3) {
+                        SettingsSectionTitle("AI POWER")
+                        SettingsCard {
+                            SettingsChipRow(
+                                listOf("low" to "Fast", "medium" to "Balanced", "high" to "Maximum"),
+                                aiEffort
+                            ) { viewModel.updateAiEffort(it) }
+                            SettingsHint("Fast replies instantly. Maximum thinks like a senior advocate - slower, deeper, sharper. Working an important case? Use Maximum.")
+                            HorizontalDivider(color = Color(0x1FFFFFFF))
+                            SettingsSectionTitle("LEGAL DETAIL LEVEL")
+                            SettingsChipRow(
+                                listOf("simple" to "Plain", "standard" to "Standard", "detailed" to "Detailed"),
+                                legalDetail
+                            ) { viewModel.updateLegalDetail(it) }
+                            SettingsHint("Plain = everyday language. Detailed = full statute names, sections and case citations.")
+                        }
+                    }
+
+                    SettingsSection(4) {
+                        SettingsSectionTitle("BEHAVIOUR")
+                        SettingsCard {
+                            SettingsToggleRow(
+                                "Cite current law",
+                                "Name the statute, regulation, or case for every answer",
+                                citeSources
+                            ) { viewModel.setCiteSources(it) }
+                            HorizontalDivider(color = Color(0x1FFFFFFF))
+                            SettingsToggleRow(
+                                "Speak replies aloud",
+                                "Every response is spoken automatically",
+                                speakReplies
+                            ) { viewModel.setSpeakReplies(it) }
+                            HorizontalDivider(color = Color(0x1FFFFFFF))
+                            SettingsToggleRow(
+                                "Live web search",
+                                "Searches the web for current facts before replying",
+                                useLiveSearch
+                            ) { viewModel.setUseLiveSearch(it) }
+                        }
+                    }
+
+                    SettingsSection(5) {
+                        SettingsSectionTitle("MY VOICE")
+                        SettingsCard {
+                            SettingsToggleRow(
+                                "Use MY voice",
+                                if (clonedVoiceBase64.isNotBlank()) "Voice sample saved - replies in your voice" else "Record a sample below to unlock this switch",
+                                useClonedVoice,
+                                enabled = clonedVoiceBase64.isNotBlank()
+                            ) { viewModel.setUseClonedVoice(it) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { toggleCloneRecording() },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(
+                                        if (isCloningRecording) Color(0xFFFF4D6D) else Color(0x33FFFFFF)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Text(
+                                        when {
+                                            isCloningRecording -> "⏹ Stop recording"
+                                            isSavingVoice -> "Saving..."
+                                            else -> "🎙 Record voice sample"
+                                        },
+                                        color = Color.White,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                if (clonedVoiceBase64.isNotBlank()) {
+                                    OutlinedButton(
+                                        onClick = { viewModel.clearVoiceSample() },
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        Text("Delete", color = Color(0xFFFF8FA3), fontSize = 14.sp)
                                     }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "SIGN IN WITH GOOGLE",
-                                color = Color.Black,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(vertical = 12.dp)
-                            )
-                        }
-                        Text(
-                            "Signs you in through Google \u2014 no passwords. Triggered once, then the email button reads your Gmail.",
-                            color = Color(0x80FFFFFF),
-                            fontSize = 11.sp
-                        )
-                    }
-                    Text("OTHER PROVIDERS (IMAP)", color = Color(0x80FFFFFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    DrawerTextField(
-                        label = "EMAIL ADDRESS",
-                        value = emailAddress,
-                        onValueChange = { viewModel.updateEmailAddress(it) },
-                        placeholder = "you@outlook.com, yahoo, icloud..."
-                    )
-                    DrawerTextField(
-                        label = "IMAP PASSWORD / APP PASSWORD",
-                        value = emailPassword,
-                        onValueChange = { viewModel.updateEmailPassword(it) },
-                        placeholder = "Your email or app password",
-                        mask = true
-                    )
-                    DrawerTextField(
-                        label = "IMAP HOST (OPTIONAL)",
-                        value = emailHost,
-                        onValueChange = { viewModel.updateEmailHost(it) },
-                        placeholder = "Auto: Gmail, Outlook, Yahoo, iCloud"
-                    )
-
-                    Text("AI POWER", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("low" to "Fast", "medium" to "Balanced", "high" to "Maximum").forEach { (key, label) ->
-                            val selected = aiEffort == key
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        if (selected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
-                                        RoundedCornerShape(14.dp)
-                                    )
-                                    .border(1.dp, if (selected) Color.Transparent else Color(0x33FFFFFF), RoundedCornerShape(14.dp))
-                                    .clickable { viewModel.updateAiEffort(key) }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
-                            ) {
-                                Text(label, color = if (selected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                        }
-                    }
-                    Text(
-                        "Fast replies instantly. Maximum thinks like a senior advocate - slower, deeper, sharper.",
-                        color = Color(0x80FFFFFF),
-                        fontSize = 11.sp
-                    )
-                    Text("LEGAL DETAIL LEVEL", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("simple" to "Plain", "standard" to "Standard", "detailed" to "Detailed").forEach { (key, label) ->
-                            val selected = legalDetail == key
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        if (selected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
-                                        RoundedCornerShape(14.dp)
-                                    )
-                                    .border(1.dp, if (selected) Color.Transparent else Color(0x33FFFFFF), RoundedCornerShape(14.dp))
-                                    .clickable { viewModel.updateLegalDetail(key) }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
-                            ) {
-                                Text(label, color = if (selected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Cite current law", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Text("Name the statute, regulation, or case for every answer", color = Color(0x80FFFFFF), fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = citeSources,
-                            onCheckedChange = { viewModel.setCiteSources(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00FFCC),
-                                checkedTrackColor = Color(0x3300FFCC)
-                            )
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Speak replies aloud", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Text("Every response is spoken automatically", color = Color(0x80FFFFFF), fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = speakReplies,
-                            onCheckedChange = { viewModel.setSpeakReplies(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00FFCC),
-                                checkedTrackColor = Color(0x3300FFCC)
-                            )
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Live web search", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Text("Searches the web for current facts before replying", color = Color(0x80FFFFFF), fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = useLiveSearch,
-                            onCheckedChange = { viewModel.setUseLiveSearch(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00FFCC),
-                                checkedTrackColor = Color(0x3300FFCC)
-                            )
-                        )
-                    }
-
-                    HorizontalDivider(color = Color(0x1FFFFFFF))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Use MY voice", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                if (clonedVoiceBase64.isNotBlank()) "Voice sample saved — replies in your voice" else "Record a sample to unlock voice cloning",
-                                color = Color(0x80FFFFFF),
-                                fontSize = 12.sp
-                            )
-                        }
-                        Switch(
-                            checked = useClonedVoice,
-                            enabled = clonedVoiceBase64.isNotBlank(),
-                            onCheckedChange = { viewModel.setUseClonedVoice(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00FFCC),
-                                checkedTrackColor = Color(0x3300FFCC)
-                            )
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = { toggleCloneRecording() },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                if (isCloningRecording) Color(0xFFFF4D6D) else Color(0x33FFFFFF)
-                            ),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Text(
-                                when {
-                                    isCloningRecording -> "⏹ Stop recording"
-                                    isSavingVoice -> "Saving..."
-                                    else -> "🎙 Record voice sample"
-                                },
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                        }
-                        if (clonedVoiceBase64.isNotBlank()) {
-                            OutlinedButton(
-                                onClick = { viewModel.clearVoiceSample() },
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Text("Delete", color = Color(0xFFFF8FA3), fontSize = 14.sp)
-                            }
+                            SettingsHint("How: 1) Tap record and speak naturally for 5-15 seconds. 2) Tap stop. 3) Turn on 'Use MY voice'. Your sample stays on this device and is sent only to generate your replies. Not working? Allow microphone access when prompted, and record a bit longer.")
                         }
                     }
 
                     Text(
-                        "Speak naturally for 5–15 seconds. Your sample stays on this device and is sent only to generate your replies.",
+                        "STRATAGEM v" + BuildConfig.VERSION_NAME,
                         color = Color(0x60FFFFFF),
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
         }
     }
+    }
+}
+
+
+@Composable
+fun SettingsSection(delayMillis: Int, content: @Composable () -> Unit) {
+    val state = remember { MutableTransitionState(false) }
+    LaunchedEffect(Unit) {
+        delay(delayMillis.toLong())
+        state.targetState = true
+    }
+    AnimatedVisibility(
+        visibleState = state,
+        enter = fadeIn(tween(320, easing = FastOutSlowInEasing)) + slideInVertically(tween(360, easing = FastOutSlowInEasing)) { it / 6 },
+        exit = fadeOut()
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+    }
+}
+
+@Composable
+fun SettingsCard(content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x14FFFFFF), RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = content
+    )
+}
+
+@Composable
+fun SettingsSectionTitle(text: String) {
+    Text(text, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+}
+
+@Composable
+fun SettingsHint(text: String) {
+    Text(text, color = Color(0x80FFFFFF), fontSize = 11.sp, lineHeight = 15.sp)
+}
+
+@Composable
+fun SettingsChipRow(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (key, label) ->
+            val isSelected = selected == key
+            Box(
+                modifier = Modifier
+                    .background(
+                        if (isSelected) Brush.linearGradient(listOf(Color(0xFF00E5C7), Color(0xFF0077B6))) else Brush.linearGradient(listOf(Color(0x1AFFFFFF), Color(0x1AFFFFFF))),
+                        RoundedCornerShape(14.dp)
+                    )
+                    .border(1.dp, if (isSelected) Color.Transparent else Color(0x33FFFFFF), RoundedCornerShape(14.dp))
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelect(key)
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(label, color = if (isSelected) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsToggleRow(title: String, subtitle: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = if (enabled) Color.White else Color(0x80FFFFFF), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(2.dp))
+            Text(subtitle, color = Color(0x80FFFFFF), fontSize = 12.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onChange(it)
+            },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF00FFCC),
+                checkedTrackColor = Color(0x3300FFCC)
+            )
+        )
+    }
+}
+
+@Composable
+fun SettingsHelpCard() {
+    var open by remember { mutableStateOf(true) }
+    val chevron by animateFloatAsState(if (open) 180f else 0f, tween(250), label = "help-chevron")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                Brush.linearGradient(listOf(Color(0x2600FFCC), Color(0x1A80DEFF), Color(0x1FFF007F))),
+                RoundedCornerShape(20.dp)
+            )
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = !open },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("START HERE - HOW SETTINGS WORK", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("▾", color = Color(0xFF80DEFF), fontSize = 13.sp, modifier = Modifier.graphicsLayer { rotationZ = chevron })
+        }
+        AnimatedVisibility(open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Spacer(Modifier.height(4.dp))
+                SettingsHelpStep("1", "PERSONA & PROFILE", "Tell the AI who it is and who you are. Everything here shapes every reply - leave blank for defaults.")
+                SettingsHelpStep("2", "AI POWER & LEGAL DETAIL", "Fast for quick chats, Maximum for deep legal strategy. Detailed names statutes and cases.")
+                SettingsHelpStep("3", "EMAIL (OPTIONAL)", "Gmail users: paste a Google Client ID/Secret from Google Cloud Console and tap SIGN IN. Outlook, Yahoo, iCloud: use your address plus an app password. You can skip this - the app works without it.")
+                SettingsHelpStep("4", "VOICE", "Record a 5-15 second sample to have replies read aloud in your own voice.")
+                HorizontalDivider(color = Color(0x26FFFFFF))
+                Text("IF YOU GET STUCK", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                SettingsHint("- No replies? Check you are online - the AI needs internet. Also check AI POWER is set to Fast, Balanced or Maximum.")
+                SettingsHint("- Gmail sign-in failing? The Client ID and secret must come from the same Google Cloud Console project, and its consent screen must be published (External > Publish app).")
+                SettingsHint("- IMAP login refused? That almost always means an app password is required, or 2-Step Verification is not enabled yet.")
+                SettingsHint("- Voice not working? Allow microphone permission when asked and record at least 5 seconds of plain natural speech.")
+                SettingsHint("- Nothing to press when done - every change saves itself the moment you type or tap.")
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsHelpStep(num: String, title: String, body: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color(0x4080DEFF), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(num, color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text(body, color = Color(0x99FFFFFF), fontSize = 11.sp, lineHeight = 15.sp)
+        }
     }
 }
 
@@ -2013,7 +2139,8 @@ fun DrawerTextField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     minHeight: Dp = 52.dp,
-    mask: Boolean = false
+    mask: Boolean = false,
+    hint: String = ""
 ) {
     Column {
         Text(label, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -2035,6 +2162,10 @@ fun DrawerTextField(
                 }
             }
         )
+        if (hint.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(hint, color = Color(0x60FFFFFF), fontSize = 11.sp, lineHeight = 15.sp)
+        }
     }
 }
 @Composable
