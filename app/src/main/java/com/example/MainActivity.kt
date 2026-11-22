@@ -1959,7 +1959,7 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
 
 
 @Composable
-fun SettingsSection(delayMillis: Int, content: @Composable () -> Unit) {
+fun SettingsSection(delayMillis: Int, content: @Composable ColumnScope.() -> Unit) {
     val state = remember { MutableTransitionState(false) }
     LaunchedEffect(Unit) {
         delay(delayMillis.toLong())
@@ -1975,7 +1975,7 @@ fun SettingsSection(delayMillis: Int, content: @Composable () -> Unit) {
 }
 
 @Composable
-fun SettingsCard(content: @Composable () -> Unit) {
+fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
