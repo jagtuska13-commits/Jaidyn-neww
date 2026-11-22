@@ -28,6 +28,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkOut
 import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.fadeIn
@@ -40,6 +41,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,6 +49,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +57,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Archive
@@ -1433,168 +1440,210 @@ fun GlassChatApp(viewModel: ShowcaseViewModel, modifier: Modifier = Modifier) {
                         }
                     }
                 }
-                if (pendingImages.isNotEmpty() || pendingDocs.isNotEmpty() || docError || docsReadingCount > 0) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (docError) {
-                            Text("Couldn't read that document. Try a smaller PDF.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { docError = false })
-                        }
-                        pendingImages.forEachIndexed { i, (img, _) ->
-                            Box(modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x26FFFFFF))) {
-                                val bitmap = remember(img) {
-                                    val bytes = Base64.decode(img, Base64.DEFAULT)
-                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                                }
-                                bitmap?.let { Image(it, "Attached image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Remove image",
-                                    tint = Color.White,
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(3.dp)
-                                        .size(16.dp)
-                                        .background(Color(0x99000000), CircleShape)
-                                        .clip(CircleShape)
-                                        .clickable { pendingImages.removeAt(i) }
-                                )
-                            }
-                        }
-                        pendingDocs.forEachIndexed { i, (docName, _) ->
-                            Row(
-                                modifier = Modifier
-                                    .background(Color(0x26FFFFFF), RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(docName, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                Spacer(Modifier.width(6.dp))
-                                Icon(Icons.Default.Close, contentDescription = "Remove document", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { pendingDocs.removeAt(i) })
-                            }
-                        }
-                        if (docsReadingCount > 0) {
-                            Row(
-                                modifier = Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (docsReadingCount > 1) "Reading $docsReadingCount documents..." else "Reading document...", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                            }
-                        }
-                    }
-                }
+                val inputInteraction = remember { MutableInteractionSource() }
+                val inputFocused by inputInteraction.collectIsFocusedAsState()
+                val borderC1 by animateColorAsState(
+                    if (inputFocused) Color(0xCCFF007F) else Color.White.copy(alpha = 0.5f), tween(350), label = "focus-b1"
+                )
+                val borderC2 by animateColorAsState(
+                    if (inputFocused) Color(0xCC00E5C7) else Color(0xFF00E5C7).copy(alpha = 0.25f), tween(350), label = "focus-b2"
+                )
+                val borderC3 by animateColorAsState(
+                    if (inputFocused) Color(0xCC80DEFF) else Color.White.copy(alpha = 0.06f), tween(350), label = "focus-b3"
+                )
+                val effortLabel = when (aiEffort) { "high" -> "MAXIMUM"; "medium" -> "BALANCED"; else -> "FAST" }
+                val detailLabel = when (legalDetail) { "detailed" -> "DETAILED"; "simple" -> "PLAIN"; else -> "STANDARD" }
 
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .imePadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BasicTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(60.dp)
-                            .background(Color(0x0F0A0E1A), RoundedCornerShape(30.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.10f),
-                                        Color.White.copy(alpha = 0.03f)
-                                    )
-                                ),
-                                RoundedCornerShape(30.dp)
-                            )
-                            .border(
-                                1.dp,
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.5f),
-                                        Color(0xFF00E5C7).copy(alpha = 0.25f),
-                                        Color.White.copy(alpha = 0.06f)
-                                    )
-                                ),
-                                RoundedCornerShape(30.dp)
-                            ),
-                        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                        decorationBox = { innerTextField ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                                val plusRotation by animateFloatAsState(
-                                    targetValue = if (showAttachMenu) 45f else 0f,
-                                    animationSpec = tween(250, easing = FastOutSlowInEasing),
-                                    label = "plus-rotation"
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .shadow(if (inputFocused) 18.dp else 10.dp, RoundedCornerShape(30.dp))
+                        .clip(RoundedCornerShape(30.dp))
+                        .background(Color(0x0F0A0E1A), RoundedCornerShape(30.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.10f),
+                                    Color.White.copy(alpha = 0.03f)
                                 )
-                                Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                            ),
+                            RoundedCornerShape(30.dp)
+                        )
+                        .border(
+                            1.dp,
+                            Brush.linearGradient(colors = listOf(borderC1, borderC2, borderC3)),
+                            RoundedCornerShape(30.dp)
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(start = 14.dp, top = 10.dp, end = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ContextChip(Icons.Default.Bolt, "AI POWER: $effortLabel") { showSettingsPanel = true }
+                        ContextChip(Icons.Default.Person, "AI: ${if (personaName.isBlank()) "STRATAGEM" else personaName}") { showSettingsPanel = true }
+                        ContextChip(Icons.Default.Gavel, "DETAIL: $detailLabel") { showSettingsPanel = true }
+                        if (jurisdiction.isNotBlank()) {
+                            ContextChip(Icons.Default.LocationOn, jurisdiction) { showSettingsPanel = true }
+                        }
+                    }
+
+                    if (pendingImages.isNotEmpty() || pendingDocs.isNotEmpty() || docError || docsReadingCount > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (docError) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color(0x26FF4D6D), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Couldn't read that document. Try a smaller PDF.", color = Color(0xFFFF8FA3), fontSize = 12.sp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { docError = false })
+                                }
+                            }
+                            pendingImages.forEachIndexed { i, (img, _) ->
+                                Box(modifier = Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x26FFFFFF))) {
+                                    val bitmap = remember(img) {
+                                        val bytes = Base64.decode(img, Base64.DEFAULT)
+                                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                    }
+                                    bitmap?.let { Image(it, "Attached image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                                     Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = "Add attachment",
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove image",
                                         tint = Color.White,
                                         modifier = Modifier
-                                            .size(24.dp)
-                                            .graphicsLayer { rotationZ = plusRotation }
-                                            .clickable {
-                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                showAttachMenu = !showAttachMenu
-                                            }
+                                            .align(Alignment.TopEnd)
+                                            .padding(3.dp)
+                                            .size(16.dp)
+                                            .background(Color(0x99000000), CircleShape)
+                                            .clip(CircleShape)
+                                            .clickable { pendingImages.removeAt(i) }
                                     )
                                 }
-                                PulsingMicButton(
-                                    isRecording = isRecording,
-                                    isTranscribing = isTranscribing,
-                                    amplitude = micAmplitude,
-                                    onToggle = {
-                                        if (isRecording) {
-                                            stopRecording()
-                                        } else {
-                                            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                            if (granted) {
-                                                startRecording()
-                                            } else {
-                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                            }
-                                        }
-                                    }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Box(modifier = Modifier.weight(1f)) {
-                                    if (inputText.isEmpty()) Text("Message STRATAGEM...", color = Color(0x80FFFFFF), fontSize = 15.sp)
-                                    innerTextField()
+                            }
+                            pendingDocs.forEachIndexed { i, (docName, _) ->
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color(0x26FFFFFF), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(docName, color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(Icons.Default.Close, contentDescription = "Remove document", tint = Color(0x80FFFFFF), modifier = Modifier.size(14.dp).clickable { pendingDocs.removeAt(i) })
                                 }
-                                AnimatedSendButton(
-                                    enabled = inputText.isNotBlank() || pendingImages.isNotEmpty() || pendingDocs.isNotEmpty(),
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        splashGone = true
-                                        pendingImages.forEach { (img, mime) ->
-                                            viewModel.sendMessage("", context.cacheDir, img, mime)
-                                        }
-                                        pendingDocs.forEach { (docName, docText) ->
-                                            viewModel.sendMessage("", context.cacheDir, null, null, docName, docText)
-                                        }
-                                        if (inputText.isNotBlank()) {
-                                            viewModel.sendMessage(inputText, context.cacheDir)
-                                        }
-                                        inputText = ""
-                                        pendingImages.clear()
-                                        pendingDocs.clear()
-                                        docError = false
-                                    }
-                                )
+                            }
+                            if (docsReadingCount > 0) {
+                                Row(
+                                    modifier = Modifier.background(Color(0x26FFFFFF), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (docsReadingCount > 1) "Reading $docsReadingCount documents..." else "Reading document...", color = Color(0xFF80DEFF), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                }
                             }
                         }
-                    )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(60.dp),
+                            interactionSource = inputInteraction,
+                            textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                            decorationBox = { innerTextField ->
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                    val plusRotation by animateFloatAsState(
+                                        targetValue = if (showAttachMenu) 45f else 0f,
+                                        animationSpec = tween(250, easing = FastOutSlowInEasing),
+                                        label = "plus-rotation"
+                                    )
+                                    Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = "Add attachment",
+                                            tint = Color.White,
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .graphicsLayer { rotationZ = plusRotation }
+                                                .clickable {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    showAttachMenu = !showAttachMenu
+                                                }
+                                        )
+                                    }
+                                    PulsingMicButton(
+                                        isRecording = isRecording,
+                                        isTranscribing = isTranscribing,
+                                        amplitude = micAmplitude,
+                                        onToggle = {
+                                            if (isRecording) {
+                                                stopRecording()
+                                            } else {
+                                                val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                                if (granted) {
+                                                    startRecording()
+                                                } else {
+                                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                }
+                                            }
+                                        }
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        if (inputText.isEmpty()) Text("Message STRATAGEM...", color = Color(0x80FFFFFF), fontSize = 15.sp)
+                                        innerTextField()
+                                    }
+                                    AnimatedSendButton(
+                                        enabled = inputText.isNotBlank() || pendingImages.isNotEmpty() || pendingDocs.isNotEmpty(),
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            splashGone = true
+                                            pendingImages.forEach { (img, mime) ->
+                                                viewModel.sendMessage("", context.cacheDir, img, mime)
+                                            }
+                                            pendingDocs.forEach { (docName, docText) ->
+                                                viewModel.sendMessage("", context.cacheDir, null, null, docName, docText)
+                                            }
+                                            if (inputText.isNotBlank()) {
+                                                viewModel.sendMessage(inputText, context.cacheDir)
+                                            }
+                                            inputText = ""
+                                            pendingImages.clear()
+                                            pendingDocs.clear()
+                                            docError = false
+                                        }
+                                    )
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -2168,6 +2217,24 @@ fun DrawerTextField(
         }
     }
 }
+
+@Composable
+fun ContextChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0x14FFFFFF), RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0x2EFFFFFF), RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = Color(0xFF80DEFF), modifier = Modifier.size(13.dp))
+        Text(text, color = Color(0xFF80DEFF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
 @Composable
 fun PulsingMicButton(isRecording: Boolean, isTranscribing: Boolean, amplitude: Float, onToggle: () -> Unit) {
     val pulse by rememberInfiniteTransition(label = "mic-pulse").animateFloat(
